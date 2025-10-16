@@ -1,85 +1,126 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+import { ConvexHttpClient } from "convex/browser";
 
-export const api = {
+// These imports will work once you run: npx convex dev
+import { api as convexApi } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
+
+// Initialize Convex client
+const CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || "";
+const convex = new ConvexHttpClient(CONVEX_URL);
+
+/**
+ * API client for Monad IRC using Convex backend
+ * 
+ * This replaces the old REST API client with Convex functions
+ * 
+ * Note: Run `npx convex dev` to generate the required types
+ */
+export const monadIrcApi = {
   // Users
-  async createOrGetUser(walletAddress: string, username: string) {
-    const response = await fetch(`${API_URL}/api/users`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ wallet_address: walletAddress, username }),
+  async createOrGetUser(walletAddress: string, username: string, smartAccountAddress?: string) {
+    return await convex.mutation(convexApi.users.createOrGetUser, {
+      walletAddress,
+      username,
+      smartAccountAddress,
     });
-    if (!response.ok) throw new Error("Failed to create/get user");
-    return response.json();
   },
 
-  async getUser(walletAddress: string) {
-    const response = await fetch(`${API_URL}/api/users/${walletAddress}`);
-    if (!response.ok) throw new Error("Failed to get user");
-    return response.json();
+  async getUserByWallet(walletAddress: string) {
+    return await convex.query(convexApi.users.getUserByWallet, {
+      walletAddress,
+    });
+  },
+
+  async getUserByUsername(username: string) {
+    return await convex.query(convexApi.users.getUserByUsername, {
+      username,
+    });
   },
 
   // Channels
   async createChannel(name: string, creator: string, txHash?: string) {
-    const response = await fetch(`${API_URL}/api/channels`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, creator, tx_hash: txHash }),
+    return await convex.mutation(convexApi.channels.createChannel, {
+      name,
+      creator,
+      txHash,
     });
-    if (!response.ok) throw new Error("Failed to create channel");
-    return response.json();
   },
 
   async getAllChannels() {
-    const response = await fetch(`${API_URL}/api/channels`);
-    if (!response.ok) throw new Error("Failed to get channels");
-    return response.json();
+    return await convex.query(convexApi.channels.getAllChannels, {});
   },
 
-  async getChannel(name: string) {
-    const response = await fetch(`${API_URL}/api/channels/${name}`);
-    if (!response.ok) throw new Error("Failed to get channel");
-    return response.json();
+  async getChannelByName(name: string) {
+    return await convex.query(convexApi.channels.getChannelByName, {
+      name,
+    });
+  },
+
+  async getChannelsByCreator(creator: string) {
+    return await convex.query(convexApi.channels.getChannelsByCreator, {
+      creator,
+    });
   },
 
   // Messages
-  async createMessage(
-    channelId: number,
-    userId: number,
+  async sendMessage(
+    channelId: Id<"channels">,
+    senderWallet: string,
     msgHash: string,
     content: string,
     txHash?: string
   ) {
-    const response = await fetch(`${API_URL}/api/messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        channel_id: channelId,
-        user_id: userId,
-        msg_hash: msgHash,
-        content,
-        tx_hash: txHash,
-      }),
+    return await convex.mutation(convexApi.messages.sendMessage, {
+      channelId,
+      senderWallet,
+      msgHash,
+      content,
+      txHash,
     });
-    if (!response.ok) throw new Error("Failed to create message");
-    return response.json();
   },
 
-  async getChannelMessages(channelId: number, limit = 100, offset = 0) {
-    const response = await fetch(
-      `${API_URL}/api/messages/channel/${channelId}?limit=${limit}&offset=${offset}`
-    );
-    if (!response.ok) throw new Error("Failed to get messages");
-    return response.json();
+  async getChannelMessages(channelId: Id<"channels">, limit?: number) {
+    return await convex.query(convexApi.messages.getChannelMessages, {
+      channelId,
+      limit,
+    });
   },
 
-  async updateMessageStatus(messageId: number, status: string, txHash?: string) {
-    const response = await fetch(`${API_URL}/api/messages/${messageId}/status`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, tx_hash: txHash }),
+  async getMessagesByChannelName(channelName: string, limit?: number) {
+    return await convex.query(convexApi.messages.getMessagesByChannelName, {
+      channelName,
+      limit,
     });
-    if (!response.ok) throw new Error("Failed to update message");
-    return response.json();
+  },
+
+  // Sessions
+  async authorizeSession(smartAccount: string, sessionKey: string, expiry: string) {
+    return await convex.mutation(convexApi.sessions.authorizeSession, {
+      smartAccount,
+      sessionKey,
+      expiry,
+    });
+  },
+
+  async getSession(smartAccount: string, sessionKey: string) {
+    return await convex.query(convexApi.sessions.getSession, {
+      smartAccount,
+      sessionKey,
+    });
+  },
+
+  async getSessionsBySmartAccount(smartAccount: string) {
+    return await convex.query(convexApi.sessions.getSessionsBySmartAccount, {
+      smartAccount,
+    });
   },
 };
 
+// Export with a clear name
+export const api = monadIrcApi;
+
+// Export the Convex client instance for advanced usage (subscriptions, etc.)
+export { convex };
+
+// Export types for convenience
+export type { Id };

@@ -18,18 +18,16 @@ contracts:
       - event: ChannelCreated(string channelName, address indexed creator, uint256 timestamp)
       - event: MessageSent(bytes32 indexed msgHash, address indexed sessionKey, string channel, uint256 timestamp)
 
-# Database configuration (PostgreSQL)
-database:
-  postgres:
-    host: ${DB_HOST:-localhost}
-    port: ${DB_PORT:-5432}
-    database: ${DB_NAME:-monad_irc}
-    user: ${DB_USER:-postgres}
-    password: ${DB_PASSWORD:-postgres}
+# Note: Database is handled by Convex, not PostgreSQL
+# Events are forwarded to Convex via HTTP webhooks
 
-# GraphQL endpoint configuration
+# GraphQL endpoint configuration (optional - for direct event queries)
 graphql:
   port: 8080
   playground: true
   introspection: true
+
+# Webhook configuration
+webhooks:
+  convex_url: ${CONVEX_WEBHOOK_URL}
 

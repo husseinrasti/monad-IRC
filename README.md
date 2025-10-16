@@ -16,8 +16,8 @@ A decentralized, retro-style IRC (Internet Relay Chat) client built entirely on 
 - **Wallet**: MetaMask Delegation Toolkit
 - **Blockchain**: Monad Testnet (Solidity smart contracts)
 - **Indexer**: Envio HyperIndex
-- **Backend**: Node.js, Express, PostgreSQL
-- **Real-time**: GraphQL Subscriptions
+- **Backend**: Convex (Serverless)
+- **Real-time**: Convex Reactive Queries
 
 ## Project Structure
 
@@ -30,93 +30,113 @@ monad-irc/
 │   ├── context/          # React context
 │   ├── hooks/            # Custom hooks
 │   ├── commands/         # Command system
-│   ├── api/              # API client
+│   ├── api/              # Convex API client
 │   └── contract/         # Contract ABI and interactions
+├── convex/                # Convex backend (serverless)
+│   ├── schema.ts         # Database schema
+│   ├── users.ts          # User functions
+│   ├── channels.ts       # Channel functions
+│   ├── messages.ts       # Message functions
+│   ├── sessions.ts       # Session functions
+│   └── http.ts           # Webhook endpoints
 ├── contracts/             # Solidity smart contracts
-│   ├── MonadIRC.sol      # Main IRC contract
-│   └── scripts/          # Deployment scripts
-├── server/                # Express backend
 │   ├── src/
-│   │   ├── routes/       # API routes
-│   │   └── db/           # Database setup
-│   └── package.json
+│   │   └── MonadIRC.sol  # Main IRC contract
+│   └── script/           # Deployment scripts
 ├── envio/                 # Envio HyperIndex configuration
+├── scripts/               # Installation and dev scripts
 └── PRD.md                # Product Requirements Document
 ```
 
-## Setup Instructions
+## 🚀 Quick Setup
 
 ### Prerequisites
 
 - Node.js 18+
-- PostgreSQL
 - MetaMask wallet
 - Monad testnet ETH
 
-### 1. Install Dependencies
+### Option 1: Automated Installation (Recommended)
 
 ```bash
-# Root (frontend)
-npm install
+# Run the installation script
+./scripts/install.sh
 
-# Backend
-cd server
-npm install
+# Start development
+./scripts/start-dev.sh
+```
 
-# Contracts
-cd ../contracts
+### Option 2: Manual Installation
+
+#### 1. Install Dependencies
+
+```bash
 npm install
 ```
 
-### 2. Database Setup
+#### 2. Initialize Convex
 
 ```bash
-# Create PostgreSQL database
-createdb monad_irc
+# Install Convex CLI globally
+npm install -g convex
 
-# Run migrations
-cd server
-npm run db:migrate
+# Initialize Convex project
+npx convex dev
 ```
 
-### 3. Environment Configuration
+This will:
+- Open a browser for Convex login
+- Create a Convex deployment
+- Generate types in `convex/_generated/`
+- Show your deployment URL
 
-Copy `.env.example` to `.env` and fill in the values:
+#### 3. Environment Configuration
+
+Create `.env.local`:
 
 ```bash
-cp .env.example .env
+cp .env.example .env.local
 ```
 
 Update the following variables:
-- `NEXT_PUBLIC_CONTRACT_ADDRESS` - After deploying the contract
-- `MONAD_RPC_URL` - Monad testnet RPC endpoint
-- `PRIVATE_KEY` - For contract deployment
-- Database credentials
 
-### 4. Deploy Smart Contract
+```bash
+# Convex deployment URL (from step 2)
+NEXT_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
+CONVEX_WEBHOOK_URL=https://your-deployment.convex.cloud
+
+# Contract address (after deployment)
+NEXT_PUBLIC_CONTRACT_ADDRESS=0xYourContractAddress
+
+# Monad testnet (defaults work)
+NEXT_PUBLIC_MONAD_RPC_URL=https://testnet-rpc.monad.xyz
+NEXT_PUBLIC_MONAD_CHAIN_ID=10143
+```
+
+#### 4. Deploy Smart Contract
 
 ```bash
 cd contracts
-npx hardhat compile
-npx hardhat run scripts/deploy.ts --network monadTestnet
+make deploy
 ```
 
-Copy the deployed contract address to your `.env` file.
+Copy the deployed contract address to your `.env.local` file.
 
-### 5. Start the Application
+#### 5. Start the Application
 
 ```bash
-# Terminal 1: Frontend
-npm run dev
+# Option A: Start both together
+npm run dev:all
 
-# Terminal 2: Backend
-cd server
-npm run dev
+# Option B: Start separately
+# Terminal 1: Convex
+npm run convex:dev
 
-# Terminal 3: Envio Indexer (optional)
-cd envio
+# Terminal 2: Next.js
 npm run dev
 ```
+
+Open http://localhost:3000 🎉
 
 ## Usage Guide
 
@@ -166,12 +186,14 @@ npx hardhat test
 npm test
 ```
 
-### Database Schema
+### Convex Database Schema
 
 - **users**: User accounts linked to wallet addresses
-- **sessions**: Session key authorization records
+- **sessions**: Session key authorization records  
 - **channels**: Chat channel registry
 - **messages**: Message history with on-chain verification
+
+All data is automatically synced in real-time with Convex's reactive queries.
 
 ## Security Considerations
 
@@ -205,13 +227,22 @@ Contributions are welcome! Please follow these steps:
 
 MIT License - see LICENSE file for details
 
+## 📚 Documentation
+
+- **[QUICK_START.md](./QUICK_START.md)** - Get started in 5 minutes
+- **[CONVEX_SETUP.md](./CONVEX_SETUP.md)** - Detailed Convex setup guide
+- **[CONVEX_MIGRATION.md](./CONVEX_MIGRATION.md)** - Migration from PostgreSQL
+- **[PRD.md](./PRD.md)** - Product Requirements Document
+- **[SCRIPTS_UPDATED.md](./SCRIPTS_UPDATED.md)** - Installation scripts guide
+
 ## Support
 
 For issues and questions:
 - Open a GitHub issue
-- Check the PRD.md for detailed specifications
+- Check the documentation above
+- Visit [Convex Discord](https://convex.dev/community) for backend questions
 
 ---
 
-Built with ❤️ on Monad
+Built with ❤️ on Monad + Convex
 

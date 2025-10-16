@@ -1,6 +1,7 @@
 /**
  * Event handlers for Monad IRC smart contract events
  * These handlers are triggered when events are detected on-chain
+ * and forward them to Convex HTTP endpoints
  */
 
 interface SessionAuthorizedEvent {
@@ -29,6 +30,44 @@ interface MessageSentEvent {
   timestamp: bigint;
 }
 
+// Get Convex webhook URL from environment or use default
+const CONVEX_WEBHOOK_URL = process.env.CONVEX_WEBHOOK_URL || process.env.NEXT_PUBLIC_CONVEX_URL;
+
+/**
+ * Helper function to call Convex HTTP endpoint
+ */
+const callConvexWebhook = async (endpoint: string, data: any) => {
+  if (!CONVEX_WEBHOOK_URL) {
+    console.error("CONVEX_WEBHOOK_URL is not set");
+    return;
+  }
+
+  const url = `${CONVEX_WEBHOOK_URL}${endpoint}`;
+  
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Webhook call failed (${response.status}):`, errorText);
+      throw new Error(`Webhook failed: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log(`Webhook success (${endpoint}):`, result);
+    return result;
+  } catch (error) {
+    console.error(`Error calling webhook (${endpoint}):`, error);
+    throw error;
+  }
+};
+
 export const handleSessionAuthorized = async (event: SessionAuthorizedEvent, context: any) => {
   console.log('Session Authorized:', {
     smartAccount: event.smartAccount,
@@ -36,14 +75,15 @@ export const handleSessionAuthorized = async (event: SessionAuthorizedEvent, con
     expiry: event.expiry.toString(),
   });
 
-  // Store in database
-  await context.db.Sessions.insert({
-    smart_account: event.smartAccount,
-    session_key: event.sessionKey,
-    expiry: event.expiry.toString(),
-    is_authorized: true,
-    timestamp: new Date(Number(event.timestamp) * 1000),
-  });
+  try {
+    await callConvexWebhook('/api/webhook/session-authorized', {
+      smartAccount: event.smartAccount,
+      sessionKey: event.sessionKey,
+      expiry: event.expiry.toString(),
+    });
+  } catch (error) {
+    console.error('Failed to process SessionAuthorized event:', error);
+  }
 };
 
 export const handleSessionRevoked = async (event: SessionRevokedEvent, context: any) => {
@@ -52,12 +92,14 @@ export const handleSessionRevoked = async (event: SessionRevokedEvent, context: 
     sessionKey: event.sessionKey,
   });
 
-  // Update in database
-  await context.db.Sessions.update({
-    smart_account: event.smartAccount,
-    session_key: event.sessionKey,
-    is_authorized: false,
-  });
+  try {
+    await callConvexWebhook('/api/webhook/session-revoked', {
+      smartAccount: event.smartAccount,
+      sessionKey: event.sessionKey,
+    });
+  } catch (error) {
+    console.error('Failed to process SessionRevoked event:', error);
+  }
 };
 
 export const handleChannelCreated = async (event: ChannelCreatedEvent, context: any) => {
@@ -66,12 +108,15 @@ export const handleChannelCreated = async (event: ChannelCreatedEvent, context: 
     creator: event.creator,
   });
 
-  // Store in database
-  await context.db.Channels.insert({
-    name: event.channelName,
-    creator: event.creator,
-    created_at: new Date(Number(event.timestamp) * 1000),
-  });
+  try {
+    await callConvexWebhook('/api/webhook/channel-created', {
+      channelName: event.channelName,
+      creator: event.creator,
+      txHash: context.transaction?.hash,
+    });
+  } catch (error) {
+    console.error('Failed to process ChannelCreated event:', error);
+  }
 };
 
 export const handleMessageSent = async (event: MessageSentEvent, context: any) => {
@@ -80,11 +125,12 @@ export const handleMessageSent = async (event: MessageSentEvent, context: any) =
     channel: event.channel,
   });
 
-  // Update message status in database
-  await context.db.Messages.update({
-    msg_hash: event.msgHash,
-    status: 'confirmed',
-    confirmed_at: new Date(Number(event.timestamp) * 1000),
-  });
+  try {
+    await callConvexWebhook('/api/webhook/message-sent', {
+      msgHash: event.msgHash,
+      txHash: context.transaction?.hash,
+    });
+  } catch (error) {
+    console.error('Failed to process MessageSent event:', error);
+  }
 };
-
