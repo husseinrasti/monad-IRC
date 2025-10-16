@@ -33,20 +33,20 @@ const MainTerminal = () => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-terminal-bg border-2 border-terminal-border crt-effect">
+    <div className="flex flex-col h-full bg-terminal-bg border-2 border-terminal-border crt-effect relative">
       <div className="scanline" />
       
       {/* Header */}
-      <div className="px-4 py-2 border-b border-terminal-border bg-terminal-bg/80">
+      <div className="px-4 py-2 border-b border-terminal-border bg-terminal-bg/80 flex-shrink-0">
         <h2 className="text-terminal-text terminal-glow font-bold">
           MONAD IRC — MAIN TERMINAL
         </h2>
       </div>
 
-      {/* Output */}
+      {/* Output - scrollable area */}
       <div
         ref={outputRef}
-        className="flex-1 overflow-y-auto px-4 py-2 scrollbar-hide"
+        className="flex-1 overflow-y-auto px-4 py-2 scrollbar-hide min-h-0"
       >
         {terminalLines.map((line) => (
           <div key={line.id} className={cn("font-mono whitespace-pre-wrap", getLineColor(line.type))}>
@@ -55,8 +55,10 @@ const MainTerminal = () => {
         ))}
       </div>
 
-      {/* Input */}
-      <TerminalInput onSubmit={handleCommand} prompt=">" />
+      {/* Input - always visible at bottom */}
+      <div className="flex-shrink-0">
+        <TerminalInput onSubmit={handleCommand} prompt=">" />
+      </div>
     </div>
   );
 };

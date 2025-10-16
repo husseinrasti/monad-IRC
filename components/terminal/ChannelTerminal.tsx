@@ -57,20 +57,20 @@ const ChannelTerminal = () => {
   }
 
   return (
-    <div className="flex flex-col h-full bg-terminal-bg border-2 border-terminal-border crt-effect">
+    <div className="flex flex-col h-full bg-terminal-bg border-2 border-terminal-border crt-effect relative">
       <div className="scanline" />
       
       {/* Header */}
-      <div className="px-4 py-2 border-b border-terminal-border bg-terminal-bg/80">
+      <div className="px-4 py-2 border-b border-terminal-border bg-terminal-bg/80 flex-shrink-0">
         <h2 className="text-terminal-text terminal-glow font-bold">
           {currentChannel.name.toUpperCase()}
         </h2>
       </div>
 
-      {/* Messages */}
+      {/* Messages - scrollable area */}
       <div
         ref={outputRef}
-        className="flex-1 overflow-y-auto px-4 py-2 scrollbar-hide"
+        className="flex-1 overflow-y-auto px-4 py-2 scrollbar-hide min-h-0"
       >
         {channelMessages.length === 0 ? (
           <div className="text-terminal-muted font-mono">
@@ -94,8 +94,10 @@ const ChannelTerminal = () => {
         )}
       </div>
 
-      {/* Input */}
-      <TerminalInput onSubmit={handleSendMessage} prompt=":" />
+      {/* Input - always visible at bottom */}
+      <div className="flex-shrink-0">
+        <TerminalInput onSubmit={handleSendMessage} prompt=":" />
+      </div>
     </div>
   );
 };
