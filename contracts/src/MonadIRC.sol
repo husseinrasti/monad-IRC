@@ -8,38 +8,42 @@ import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
  * @title MonadIRC
  * @notice Decentralized IRC chat system with session key authorization
  * @dev Implements session-based authentication for gasless message sending
+ * @custom:security-contact security@monad-irc.xyz
  */
 contract MonadIRC {
     using ECDSA for bytes32;
     using MessageHashUtils for bytes32;
 
-    // Session key authorization
+    /// @notice Session key authorization structure
     struct Session {
         address sessionKey;
         uint256 expiry;
         bool isAuthorized;
     }
 
-    // Events
+    /// @notice Emitted when a session key is authorized
     event SessionAuthorized(
         address indexed smartAccount,
         address indexed sessionKey,
         uint256 expiry,
         uint256 timestamp
     );
-    
+
+    /// @notice Emitted when a session key is revoked
     event SessionRevoked(
         address indexed smartAccount,
         address indexed sessionKey,
         uint256 timestamp
     );
-    
+
+    /// @notice Emitted when a new channel is created
     event ChannelCreated(
         string channelName,
         address indexed creator,
         uint256 timestamp
     );
-    
+
+    /// @notice Emitted when a message is sent
     event MessageSent(
         bytes32 indexed msgHash,
         address indexed sessionKey,
@@ -47,14 +51,37 @@ contract MonadIRC {
         uint256 timestamp
     );
 
-    // State
-    mapping(address => Session) public sessions; // smartAccount => Session
-    mapping(string => bool) public channelExists; // channelName => exists
-    mapping(string => address) public channelCreators; // channelName => creator
-    mapping(bytes32 => bool) public processedMessages; // msgHash => processed
-    
-    // Nonce tracking to prevent replay attacks
+    /// @notice Maximum allowed timestamp drift (5 minutes)
+    uint256 public constant MAX_TIMESTAMP_DRIFT = 300;
+
+    /// @notice Mapping of smart accounts to their session data
+    mapping(address => Session) public sessions;
+
+    /// @notice Mapping to check if a channel exists
+    mapping(string => bool) public channelExists;
+
+    /// @notice Mapping of channel names to their creators
+    mapping(string => address) public channelCreators;
+
+    /// @notice Mapping to track processed messages (prevents replay)
+    mapping(bytes32 => bool) public processedMessages;
+
+    /// @notice Nonce tracking to prevent replay attacks
     mapping(address => uint256) public nonces;
+
+    /// @notice Custom errors for gas optimization
+    error InvalidSessionKey();
+    error ExpiryMustBeInFuture();
+    error NoActiveSession();
+    error ChannelNameTooShort();
+    error ChannelAlreadyExists();
+    error ChannelDoesNotExist();
+    error MessageAlreadyProcessed();
+    error SessionInvalidOrExpired();
+    error InvalidNonce();
+    error TimestampTooFarInFuture();
+    error TimestampTooOld();
+    error InvalidSignature();
 
     /**
      * @notice Authorize a session key for a smart account
@@ -62,8 +89,8 @@ contract MonadIRC {
      * @param expiry Unix timestamp when session expires
      */
     function authorizeSession(address sessionKey, uint256 expiry) external {
-        require(sessionKey != address(0), "Invalid session key");
-        require(expiry > block.timestamp, "Expiry must be in future");
+        if (sessionKey == address(0)) revert InvalidSessionKey();
+        if (expiry <= block.timestamp) revert ExpiryMustBeInFuture();
 
         sessions[msg.sender] = Session({
             sessionKey: sessionKey,
@@ -79,7 +106,7 @@ contract MonadIRC {
      */
     function revokeSession() external {
         Session storage session = sessions[msg.sender];
-        require(session.isAuthorized, "No active session");
+        if (!session.isAuthorized) revert NoActiveSession();
 
         address sessionKey = session.sessionKey;
         session.isAuthorized = false;
@@ -102,8 +129,8 @@ contract MonadIRC {
      * @param channelName Name of the channel (should start with #)
      */
     function createChannel(string memory channelName) external {
-        require(bytes(channelName).length > 1, "Channel name too short");
-        require(!channelExists[channelName], "Channel already exists");
+        if (bytes(channelName).length <= 1) revert ChannelNameTooShort();
+        if (channelExists[channelName]) revert ChannelAlreadyExists();
 
         channelExists[channelName] = true;
         channelCreators[channelName] = msg.sender;
@@ -128,12 +155,17 @@ contract MonadIRC {
         address smartAccount,
         bytes memory signature
     ) external {
-        require(channelExists[channel], "Channel does not exist");
-        require(!processedMessages[msgHash], "Message already processed");
-        require(isSessionValid(smartAccount), "Session invalid or expired");
-        require(nonce == nonces[smartAccount], "Invalid nonce");
-        require(timestamp <= block.timestamp + 300, "Timestamp too far in future");
-        require(timestamp >= block.timestamp - 300, "Timestamp too old");
+        if (!channelExists[channel]) revert ChannelDoesNotExist();
+        if (processedMessages[msgHash]) revert MessageAlreadyProcessed();
+        if (!isSessionValid(smartAccount)) revert SessionInvalidOrExpired();
+        if (nonce != nonces[smartAccount]) revert InvalidNonce();
+        if (timestamp > block.timestamp + MAX_TIMESTAMP_DRIFT) {
+            revert TimestampTooFarInFuture();
+        }
+        // Avoid underflow by restructuring the comparison
+        if (timestamp + MAX_TIMESTAMP_DRIFT < block.timestamp) {
+            revert TimestampTooOld();
+        }
 
         // Verify signature
         bytes32 messageHash = keccak256(
@@ -143,7 +175,7 @@ contract MonadIRC {
         address signer = ethSignedMessageHash.recover(signature);
 
         Session memory session = sessions[smartAccount];
-        require(signer == session.sessionKey, "Invalid signature");
+        if (signer != session.sessionKey) revert InvalidSignature();
 
         // Mark message as processed and increment nonce
         processedMessages[msgHash] = true;
@@ -155,11 +187,14 @@ contract MonadIRC {
     /**
      * @notice Get session info for a smart account
      * @param smartAccount The smart account address
+     * @return sessionKey The session key address
+     * @return expiry The session expiry timestamp
+     * @return isAuthorized Whether the session is authorized
      */
-    function getSession(address smartAccount) 
-        external 
-        view 
-        returns (address sessionKey, uint256 expiry, bool isAuthorized) 
+    function getSession(address smartAccount)
+        external
+        view
+        returns (address sessionKey, uint256 expiry, bool isAuthorized)
     {
         Session memory session = sessions[smartAccount];
         return (session.sessionKey, session.expiry, session.isAuthorized);
@@ -168,6 +203,7 @@ contract MonadIRC {
     /**
      * @notice Get current nonce for a smart account
      * @param smartAccount The smart account address
+     * @return The current nonce value
      */
     function getNonce(address smartAccount) external view returns (uint256) {
         return nonces[smartAccount];

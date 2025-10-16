@@ -1,0 +1,26 @@
+# Foundry
+cache/
+cache_foundry/
+out/
+broadcast/
+.gas-snapshot
+
+# Node
+node_modules/
+
+# Environment files
+.env
+
+# Hardhat (legacy)
+artifacts/
+cache/
+typechain/
+typechain-types/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
