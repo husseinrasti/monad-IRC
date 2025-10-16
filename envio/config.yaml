@@ -1,0 +1,35 @@
+# Envio HyperIndex Configuration for Monad IRC
+name: monad-irc-indexer
+description: Real-time indexer for Monad IRC events
+networks:
+  - id: monad-testnet
+    rpc_config:
+      url: ${MONAD_RPC_URL}
+    start_block: ${START_BLOCK:-0}
+
+contracts:
+  - name: MonadIRC
+    address: ${CONTRACT_ADDRESS}
+    abi_file_path: ./abis/MonadIRC.json
+    handler: ./src/eventHandlers.ts
+    events:
+      - event: SessionAuthorized(address indexed smartAccount, address indexed sessionKey, uint256 expiry, uint256 timestamp)
+      - event: SessionRevoked(address indexed smartAccount, address indexed sessionKey, uint256 timestamp)
+      - event: ChannelCreated(string channelName, address indexed creator, uint256 timestamp)
+      - event: MessageSent(bytes32 indexed msgHash, address indexed sessionKey, string channel, uint256 timestamp)
+
+# Database configuration (PostgreSQL)
+database:
+  postgres:
+    host: ${DB_HOST:-localhost}
+    port: ${DB_PORT:-5432}
+    database: ${DB_NAME:-monad_irc}
+    user: ${DB_USER:-postgres}
+    password: ${DB_PASSWORD:-postgres}
+
+# GraphQL endpoint configuration
+graphql:
+  port: 8080
+  playground: true
+  introspection: true
+
