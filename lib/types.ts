@@ -25,6 +25,9 @@ export interface User {
   walletAddress: string;
   username: string;
   smartAccountAddress?: string;
+  convexUserId?: string; // Convex database user ID
+  verificationSignature?: string; // Signature for wallet verification
+  lastConnected?: Date;
 }
 
 export interface SessionKey {
@@ -32,6 +35,7 @@ export interface SessionKey {
   privateKey: string;
   expiry: number;
   authorized: boolean;
+  smartAccount?: string; // Smart account address linked to this session
 }
 
 export interface IRCState {
@@ -42,6 +46,7 @@ export interface IRCState {
   messages: Message[];
   isConnected: boolean;
   isSessionAuthorized: boolean;
+  isWalletMonitoring: boolean; // Track if we're monitoring wallet state
 }
 
 export interface Command {

@@ -6,6 +6,11 @@ export const HELP_TEXTS: Record<string, { usage: string; description: string; ex
     description: "Show a list of all available commands or detailed help for a specific command",
     examples: ["help", "help join", "help create"],
   },
+  man: {
+    usage: "man [command]",
+    description: "Alias for 'help' - show a list of all available commands or detailed help for a specific command",
+    examples: ["man", "man join", "man create"],
+  },
   "connect wallet": {
     usage: "connect wallet",
     description: "Connects your MetaMask Smart Account via Delegation Toolkit",
@@ -40,6 +45,15 @@ export const HELP_TEXTS: Record<string, { usage: string; description: string; ex
     usage: "logout",
     description: "Ends session and clears local session keys",
   },
+  "username set": {
+    usage: "username set <newName>",
+    description: "Set a custom username (3-20 characters: letters, numbers, _, -)",
+    examples: ["username set alice", "username set bob_123"],
+  },
+  "username clear": {
+    usage: "username clear",
+    description: "Reset username to your wallet address",
+  },
 };
 
 export const parseCommand = (input: string): { command: string; args: string[] } => {
@@ -47,7 +61,13 @@ export const parseCommand = (input: string): { command: string; args: string[] }
   const parts = trimmed.split(/\s+/);
   
   // Handle multi-word commands
-  const multiWordCommands = ["connect wallet", "authorize session", "list channels"];
+  const multiWordCommands = [
+    "connect wallet", 
+    "authorize session", 
+    "list channels",
+    "username set",
+    "username clear",
+  ];
   
   for (const multiCmd of multiWordCommands) {
     const cmdParts = multiCmd.split(" ");
@@ -92,17 +112,25 @@ export const getAllCommandsHelp = (): string[] => {
   return [
     "Available Commands:",
     "",
-    "  help [command]          - Show this help or help for specific command",
+    "Wallet & Account:",
     "  connect wallet          - Connect your MetaMask wallet",
     "  authorize session       - Authorize session key for gasless transactions",
+    "  username set <name>     - Set a custom username",
+    "  username clear          - Reset username to wallet address",
+    "  logout                  - Disconnect and end session",
+    "",
+    "Channels:",
     "  create #channelName     - Create a new channel",
     "  join #channelName       - Join an existing channel",
     "  leave                   - Leave current channel",
     "  list channels           - List all available channels",
-    "  clear                   - Clear terminal screen",
-    "  logout                  - Disconnect and end session",
     "",
-    "Type 'help <command>' for more details on a specific command.",
+    "Utility:",
+    "  help [command]          - Show this help or help for specific command",
+    "  man [command]           - Alias for 'help'",
+    "  clear                   - Clear terminal screen",
+    "",
+    "Type 'help <command>' or 'man <command>' for more details on a specific command.",
   ];
 };
 

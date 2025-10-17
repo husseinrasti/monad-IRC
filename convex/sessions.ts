@@ -9,6 +9,7 @@ export const authorizeSession = mutation({
     smartAccount: v.string(),
     sessionKey: v.string(),
     expiry: v.string(),
+    userId: v.id("users"),
   },
   returns: v.object({
     _id: v.id("sessions"),
@@ -17,9 +18,24 @@ export const authorizeSession = mutation({
     sessionKey: v.string(),
     expiry: v.string(),
     isAuthorized: v.boolean(),
+    userId: v.id("users"),
+    isActive: v.optional(v.boolean()),
+    lastUsed: v.optional(v.number()),
   }),
   handler: async (ctx, args) => {
-    // Check if session already exists
+    // Deactivate any existing sessions for this user
+    const existingSessions = await ctx.db
+      .query("sessions")
+      .withIndex("by_user_and_active", (q) => 
+        q.eq("userId", args.userId).eq("isActive", true)
+      )
+      .collect();
+
+    for (const session of existingSessions) {
+      await ctx.db.patch(session._id, { isActive: false });
+    }
+
+    // Check if session already exists for this smart account and key
     const existingSession = await ctx.db
       .query("sessions")
       .withIndex("by_smart_account_and_session_key", (q) =>
@@ -32,12 +48,20 @@ export const authorizeSession = mutation({
       await ctx.db.patch(existingSession._id, {
         expiry: args.expiry,
         isAuthorized: true,
+        isActive: true,
+        lastUsed: Date.now(),
       });
 
       const updatedSession = await ctx.db.get(existingSession._id);
       if (!updatedSession) {
         throw new Error("Failed to update session");
       }
+      
+      // Update user's active session reference
+      await ctx.db.patch(args.userId, {
+        activeSessionId: updatedSession._id,
+      });
+
       return updatedSession;
     }
 
@@ -47,12 +71,20 @@ export const authorizeSession = mutation({
       sessionKey: args.sessionKey,
       expiry: args.expiry,
       isAuthorized: true,
+      userId: args.userId,
+      isActive: true,
+      lastUsed: Date.now(),
     });
 
     const session = await ctx.db.get(sessionId);
     if (!session) {
       throw new Error("Failed to create session");
     }
+
+    // Update user's active session reference
+    await ctx.db.patch(args.userId, {
+      activeSessionId: sessionId,
+    });
 
     return session;
   },
@@ -66,9 +98,27 @@ export const authorizeSessionInternal = internalMutation({
     smartAccount: v.string(),
     sessionKey: v.string(),
     expiry: v.string(),
+    userId: v.optional(v.id("users")),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    // If userId not provided, try to find user by smart account or wallet address
+    let userId = args.userId;
+    if (!userId) {
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_wallet", (q) => q.eq("walletAddress", args.smartAccount))
+        .first();
+      
+      if (user) {
+        userId = user._id;
+      } else {
+        // If no user found, we can't link the session
+        console.warn(`No user found for smart account: ${args.smartAccount}`);
+        // Create session without user link for now
+      }
+    }
+
     // Check if session already exists
     const existingSession = await ctx.db
       .query("sessions")
@@ -79,20 +129,51 @@ export const authorizeSessionInternal = internalMutation({
 
     if (existingSession) {
       // Update existing session
-      await ctx.db.patch(existingSession._id, {
+      const updates: Record<string, unknown> = {
         expiry: args.expiry,
         isAuthorized: true,
-      });
+        isActive: true,
+        lastUsed: Date.now(),
+      };
+      
+      if (userId && existingSession.userId !== userId) {
+        updates.userId = userId;
+      }
+      
+      await ctx.db.patch(existingSession._id, updates);
+      
+      // Update user's active session if userId available
+      if (userId) {
+        await ctx.db.patch(userId, {
+          activeSessionId: existingSession._id,
+        });
+      }
+      
       return null;
     }
 
-    // Create new session
-    await ctx.db.insert("sessions", {
+    // Create new session - only if we have a userId
+    if (!userId) {
+      console.error("Cannot create session without userId");
+      return null;
+    }
+    
+    const sessionId = await ctx.db.insert("sessions", {
       smartAccount: args.smartAccount,
       sessionKey: args.sessionKey,
       expiry: args.expiry,
       isAuthorized: true,
+      userId: userId,
+      isActive: true,
+      lastUsed: Date.now(),
     });
+
+    // Update user's active session if userId available
+    if (userId) {
+      await ctx.db.patch(userId, {
+        activeSessionId: sessionId,
+      });
+    }
 
     return null;
   },
@@ -144,6 +225,9 @@ export const getSession = query({
       sessionKey: v.string(),
       expiry: v.string(),
       isAuthorized: v.boolean(),
+      userId: v.id("users"),
+      isActive: v.optional(v.boolean()),
+      lastUsed: v.optional(v.number()),
     }),
     v.null()
   ),
@@ -174,6 +258,9 @@ export const getSessionsBySmartAccount = query({
       sessionKey: v.string(),
       expiry: v.string(),
       isAuthorized: v.boolean(),
+      userId: v.id("users"),
+      isActive: v.optional(v.boolean()),
+      lastUsed: v.optional(v.number()),
     })
   ),
   handler: async (ctx, args) => {
@@ -184,6 +271,22 @@ export const getSessionsBySmartAccount = query({
       .collect();
 
     return sessions;
+  },
+});
+
+/**
+ * Deactivate a session
+ */
+export const deactivateSession = mutation({
+  args: {
+    sessionId: v.id("sessions"),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, {
+      isActive: false,
+    });
+    return null;
   },
 });
 

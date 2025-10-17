@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { useIRC } from "@/lib/context/IRCContext";
 import { useWallet } from "./useWallet";
 import { useSessionKey } from "./useSessionKey";
+import { useUsername } from "./useUsername";
 import { parseCommand, formatHelpText, getAllCommandsHelp } from "@/lib/commands/commands";
 import { Channel } from "@/lib/types";
 
@@ -22,6 +23,7 @@ export const useCommandHandler = () => {
 
   const { connectWallet, disconnectWallet } = useWallet();
   const { authorizeSession } = useSessionKey();
+  const { setUsername, clearUsername } = useUsername();
 
   const handleCommand = useCallback(
     async (input: string) => {
@@ -34,6 +36,7 @@ export const useCommandHandler = () => {
 
       switch (command) {
         case "help":
+        case "man":
           if (args.length > 0) {
             const helpLines = formatHelpText(args.join(" "));
             helpLines.forEach((line) => addTerminalLine(line, "info"));
@@ -158,6 +161,27 @@ export const useCommandHandler = () => {
           }
           break;
 
+        case "username set":
+          if (!isConnected) {
+            addTerminalLine("Please connect your wallet first.", "error");
+            break;
+          }
+          if (args.length === 0) {
+            addTerminalLine("Usage: username set <newName>", "error");
+            addTerminalLine("Example: username set alice", "info");
+            break;
+          }
+          await setUsername(args[0]);
+          break;
+
+        case "username clear":
+          if (!isConnected) {
+            addTerminalLine("Please connect your wallet first.", "error");
+            break;
+          }
+          await clearUsername();
+          break;
+
         default:
           addTerminalLine(`Unknown command: ${command}`, "error");
           addTerminalLine("Type 'help' to see available commands.", "info");
@@ -177,6 +201,8 @@ export const useCommandHandler = () => {
       connectWallet,
       disconnectWallet,
       authorizeSession,
+      setUsername,
+      clearUsername,
     ]
   );
 

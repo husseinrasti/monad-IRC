@@ -16,6 +16,9 @@ export default defineSchema({
     walletAddress: v.string(),
     username: v.string(),
     smartAccountAddress: v.optional(v.string()),
+    verificationSignature: v.optional(v.string()),
+    lastConnected: v.optional(v.number()),
+    activeSessionId: v.optional(v.id("sessions")),
   })
     .index("by_wallet", ["walletAddress"])
     .index("by_username", ["username"]),
@@ -26,10 +29,15 @@ export default defineSchema({
     sessionKey: v.string(),
     expiry: v.string(), // bigint as string
     isAuthorized: v.boolean(),
+    userId: v.id("users"), // Link session to user
+    isActive: v.optional(v.boolean()),
+    lastUsed: v.optional(v.number()),
   })
     .index("by_smart_account", ["smartAccount"])
     .index("by_session_key", ["sessionKey"])
-    .index("by_smart_account_and_session_key", ["smartAccount", "sessionKey"]),
+    .index("by_smart_account_and_session_key", ["smartAccount", "sessionKey"])
+    .index("by_user", ["userId"])
+    .index("by_user_and_active", ["userId", "isActive"]),
 
   // Channels table
   channels: defineTable({
