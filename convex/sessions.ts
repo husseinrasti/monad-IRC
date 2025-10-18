@@ -19,7 +19,7 @@ export const authorizeSession = mutation({
     expiry: v.string(),
     isAuthorized: v.boolean(),
     userId: v.id("users"),
-    isActive: v.optional(v.boolean()),
+    isActive: v.boolean(),
     lastUsed: v.optional(v.number()),
   }),
   handler: async (ctx, args) => {
@@ -226,7 +226,7 @@ export const getSession = query({
       expiry: v.string(),
       isAuthorized: v.boolean(),
       userId: v.id("users"),
-      isActive: v.optional(v.boolean()),
+      isActive: v.boolean(),
       lastUsed: v.optional(v.number()),
     }),
     v.null()
@@ -259,7 +259,7 @@ export const getSessionsBySmartAccount = query({
       expiry: v.string(),
       isAuthorized: v.boolean(),
       userId: v.id("users"),
-      isActive: v.optional(v.boolean()),
+      isActive: v.boolean(),
       lastUsed: v.optional(v.number()),
     })
   ),

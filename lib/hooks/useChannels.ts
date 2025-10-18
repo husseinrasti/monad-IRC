@@ -1,24 +1,56 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { useIRC } from "@/lib/context/IRCContext";
-import { api } from "@/lib/api/client";
+import { api, convexReact } from "@/lib/api/client";
+import { api as convexApi } from "../../convex/_generated/api";
 import { Channel } from "@/lib/types";
 
 export const useChannels = () => {
   const { channels, addChannel, addTerminalLine } = useIRC();
+  const [isSubscribed, setIsSubscribed] = useState(false);
+
+  // Subscribe to channels in real-time
+  useEffect(() => {
+    if (isSubscribed) return;
+
+    const unsubscribe = convexReact.watchQuery(convexApi.channels.getAllChannels, {}).onUpdate(() => {
+      api.getAllChannels().then((fetchedChannels) => {
+        fetchedChannels.forEach((channel) => {
+          const channelObj: Channel = {
+            id: channel._id,
+            name: channel.name,
+            creator: channel.creator,
+            createdAt: new Date(channel._creationTime),
+            txHash: channel.txHash,
+          };
+          addChannel(channelObj);
+        });
+      }).catch((error) => {
+        console.error("Failed to fetch channels:", error);
+        addTerminalLine("Failed to fetch channels from server", "error");
+      });
+    });
+
+    setIsSubscribed(true);
+
+    return () => {
+      unsubscribe();
+      setIsSubscribed(false);
+    };
+  }, [addChannel, addTerminalLine, isSubscribed]);
 
   const fetchChannels = useCallback(async () => {
     try {
       const fetchedChannels = await api.getAllChannels();
       
-      fetchedChannels.forEach((channel: { id: string; name: string; creator: string; created_at: string; tx_hash?: string }) => {
+      fetchedChannels.forEach((channel) => {
         const channelObj: Channel = {
-          id: channel.id.toString(),
+          id: channel._id,
           name: channel.name,
           creator: channel.creator,
-          createdAt: new Date(channel.created_at),
-          txHash: channel.tx_hash,
+          createdAt: new Date(channel._creationTime),
+          txHash: channel.txHash,
         };
         addChannel(channelObj);
       });
@@ -33,11 +65,11 @@ export const useChannels = () => {
       const newChannel = await api.createChannel(name, creator, txHash);
       
       const channelObj: Channel = {
-        id: newChannel.id.toString(),
+        id: newChannel._id,
         name: newChannel.name,
         creator: newChannel.creator,
-        createdAt: new Date(newChannel.created_at),
-        txHash: newChannel.tx_hash,
+        createdAt: new Date(newChannel._creationTime),
+        txHash: newChannel.txHash,
       };
       
       addChannel(channelObj);
@@ -48,10 +80,6 @@ export const useChannels = () => {
       return null;
     }
   }, [addChannel, addTerminalLine]);
-
-  useEffect(() => {
-    fetchChannels();
-  }, [fetchChannels]);
 
   return {
     channels,

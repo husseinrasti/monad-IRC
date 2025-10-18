@@ -8,7 +8,7 @@ export const createOrGetUser = mutation({
   args: {
     walletAddress: v.string(),
     username: v.string(),
-    smartAccountAddress: v.optional(v.string()),
+    smartAccountAddress: v.string(), // Required for Smart Account
     verificationSignature: v.optional(v.string()),
   },
   returns: v.object({
@@ -16,7 +16,7 @@ export const createOrGetUser = mutation({
     _creationTime: v.number(),
     walletAddress: v.string(),
     username: v.string(),
-    smartAccountAddress: v.optional(v.string()),
+    smartAccountAddress: v.string(),
     verificationSignature: v.optional(v.string()),
     lastConnected: v.optional(v.number()),
     activeSessionId: v.optional(v.id("sessions")),
@@ -32,11 +32,8 @@ export const createOrGetUser = mutation({
       // Update user data
       const updates: Record<string, unknown> = {
         lastConnected: Date.now(),
+        smartAccountAddress: args.smartAccountAddress, // Always update Smart Account address
       };
-      
-      if (args.smartAccountAddress && existingUser.smartAccountAddress !== args.smartAccountAddress) {
-        updates.smartAccountAddress = args.smartAccountAddress;
-      }
       
       if (args.verificationSignature) {
         updates.verificationSignature = args.verificationSignature;
@@ -113,7 +110,7 @@ export const getUserByUsername = query({
       _creationTime: v.number(),
       walletAddress: v.string(),
       username: v.string(),
-      smartAccountAddress: v.optional(v.string()),
+      smartAccountAddress: v.string(),
       verificationSignature: v.optional(v.string()),
       lastConnected: v.optional(v.number()),
       activeSessionId: v.optional(v.id("sessions")),
@@ -144,7 +141,7 @@ export const getUserWithSession = query({
         _creationTime: v.number(),
         walletAddress: v.string(),
         username: v.string(),
-        smartAccountAddress: v.optional(v.string()),
+        smartAccountAddress: v.string(),
         verificationSignature: v.optional(v.string()),
         lastConnected: v.optional(v.number()),
         activeSessionId: v.optional(v.id("sessions")),
@@ -158,7 +155,7 @@ export const getUserWithSession = query({
           expiry: v.string(),
           isAuthorized: v.boolean(),
           userId: v.id("users"),
-          isActive: v.optional(v.boolean()),
+          isActive: v.boolean(),
           lastUsed: v.optional(v.number()),
         }),
         v.null()

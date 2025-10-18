@@ -1,3 +1,5 @@
+import type { Id } from "@/convex/_generated/dataModel";
+
 export type MessageStatus = "pending" | "confirmed" | "failed";
 
 export interface Message {
@@ -22,30 +24,30 @@ export interface Channel {
 
 export interface User {
   id: string;
-  walletAddress: string;
+  walletAddress: string; // EOA wallet address from MetaMask
   username: string;
-  smartAccountAddress?: string;
-  convexUserId?: string; // Convex database user ID
+  smartAccountAddress: string; // Smart Account address (required)
+  convexUserId?: Id<"users">; // Convex database user ID
   verificationSignature?: string; // Signature for wallet verification
   lastConnected?: Date;
 }
 
-export interface SessionKey {
-  publicKey: string;
-  privateKey: string;
-  expiry: number;
-  authorized: boolean;
-  smartAccount?: string; // Smart account address linked to this session
+export interface DelegationSession {
+  sessionAddress: string; // Delegated signer address
+  validUntil: number; // Expiry timestamp
+  allowedContracts: string[]; // Contracts this session can interact with
+  isActive: boolean;
+  createdAt: Date;
 }
 
 export interface IRCState {
   user: User | null;
-  sessionKey: SessionKey | null;
+  delegationSession: DelegationSession | null;
   currentChannel: Channel | null;
   channels: Channel[];
   messages: Message[];
   isConnected: boolean;
-  isSessionAuthorized: boolean;
+  isDelegationActive: boolean;
   isWalletMonitoring: boolean; // Track if we're monitoring wallet state
 }
 

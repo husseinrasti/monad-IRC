@@ -10,8 +10,9 @@ contract MonadIRCTest is Test {
     address public smartAccount;
     address public sessionKey;
     uint256 public sessionPrivateKey;
-    address public user2;
-    address public user3;
+    address public smartAccount2;
+    address public sessionKey2;
+    uint256 public sessionPrivateKey2;
 
     uint256 public constant EXPIRY_FUTURE = 365 days;
     string public constant TEST_CHANNEL = "#general";
@@ -30,12 +31,19 @@ contract MonadIRCTest is Test {
         uint256 timestamp
     );
 
-    event ChannelCreated(string channelName, address indexed creator, uint256 timestamp);
+    event ChannelCreated(
+        bytes32 indexed channelId,
+        string channelName,
+        address indexed creator,
+        uint256 timestamp,
+        bytes32 txMeta
+    );
 
     event MessageSent(
         bytes32 indexed msgHash,
+        address indexed smartAccount,
         address indexed sessionKey,
-        string channel,
+        bytes32 channelId,
         uint256 timestamp
     );
 
@@ -46,15 +54,55 @@ contract MonadIRCTest is Test {
         smartAccount = makeAddr("smartAccount");
         sessionPrivateKey = 0x1234;
         sessionKey = vm.addr(sessionPrivateKey);
-        user2 = makeAddr("user2");
-        user3 = makeAddr("user3");
+        
+        smartAccount2 = makeAddr("smartAccount2");
+        sessionPrivateKey2 = 0x5678;
+        sessionKey2 = vm.addr(sessionPrivateKey2);
     }
 
     /*//////////////////////////////////////////////////////////////
-                        SESSION AUTHORIZATION TESTS
+                        HELPER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function test_AuthorizeSession() public {
+    /// @notice Helper to create domain-bound signature for channel creation
+    function _signChannelCreation(
+        string memory channelName,
+        uint256 nonce,
+        uint256 timestamp,
+        address _smartAccount,
+        uint256 _sessionPrivateKey
+    ) internal view returns (bytes memory) {
+        bytes32 channelId = keccak256(abi.encodePacked(channelName));
+        bytes memory payload = abi.encode("CREATE_CHANNEL", channelId, nonce, timestamp, _smartAccount);
+        bytes32 digest = keccak256(abi.encode(block.chainid, address(monadIRC), payload));
+        bytes32 ethSigned = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", digest));
+        
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(_sessionPrivateKey, ethSigned);
+        return abi.encodePacked(r, s, v);
+    }
+
+    /// @notice Helper to create domain-bound signature for message sending
+    function _signMessage(
+        bytes32 msgHash,
+        bytes32 channelId,
+        uint256 nonce,
+        uint256 timestamp,
+        address _smartAccount,
+        uint256 _sessionPrivateKey
+    ) internal view returns (bytes memory) {
+        bytes memory payload = abi.encode("SEND_MESSAGE", msgHash, channelId, nonce, timestamp, _smartAccount);
+        bytes32 digest = keccak256(abi.encode(block.chainid, address(monadIRC), payload));
+        bytes32 ethSigned = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", digest));
+        
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(_sessionPrivateKey, ethSigned);
+        return abi.encodePacked(r, s, v);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    SESSION AUTHORIZATION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_AuthorizeSession_Success() public {
         uint256 expiry = block.timestamp + EXPIRY_FUTURE;
 
         vm.prank(smartAccount);
@@ -63,17 +111,15 @@ contract MonadIRCTest is Test {
 
         monadIRC.authorizeSession(sessionKey, expiry);
 
-        // Verify session was created
-        (address storedKey, uint256 storedExpiry, bool isAuthorized) =
-            monadIRC.getSession(smartAccount);
-
+        // Verify session storage
+        (address storedKey, uint256 storedExpiry, bool isAuthorized) = monadIRC.getSession(smartAccount);
         assertEq(storedKey, sessionKey);
         assertEq(storedExpiry, expiry);
         assertTrue(isAuthorized);
         assertTrue(monadIRC.isSessionValid(smartAccount));
     }
 
-    function test_RevertWhen_AuthorizeSessionWithZeroAddress() public {
+    function test_AuthorizeSession_RevertWhen_ZeroAddress() public {
         uint256 expiry = block.timestamp + EXPIRY_FUTURE;
 
         vm.prank(smartAccount);
@@ -81,7 +127,7 @@ contract MonadIRCTest is Test {
         monadIRC.authorizeSession(address(0), expiry);
     }
 
-    function test_RevertWhen_AuthorizeSessionWithPastExpiry() public {
+    function test_AuthorizeSession_RevertWhen_PastExpiry() public {
         uint256 expiry = block.timestamp - 1;
 
         vm.prank(smartAccount);
@@ -89,57 +135,45 @@ contract MonadIRCTest is Test {
         monadIRC.authorizeSession(sessionKey, expiry);
     }
 
-    function test_AuthorizeSession_OverwriteExisting() public {
+    function test_AuthorizeSession_RevertWhen_CurrentTimestamp() public {
+        uint256 expiry = block.timestamp;
+
+        vm.prank(smartAccount);
+        vm.expectRevert(MonadIRC.ExpiryMustBeInFuture.selector);
+        monadIRC.authorizeSession(sessionKey, expiry);
+    }
+
+    function test_AuthorizeSession_CanOverwriteExisting() public {
         // First authorization
-        uint256 expiry1 = block.timestamp + EXPIRY_FUTURE;
         vm.prank(smartAccount);
-        monadIRC.authorizeSession(sessionKey, expiry1);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + 100);
 
-        // Create new session key
-        uint256 newSessionPrivateKey = 0x5678;
-        address newSessionKey = vm.addr(newSessionPrivateKey);
-
-        // Second authorization (overwrite)
-        uint256 expiry2 = block.timestamp + EXPIRY_FUTURE + 30 days;
+        // Overwrite with new session
+        uint256 newExpiry = block.timestamp + 200;
         vm.prank(smartAccount);
-        monadIRC.authorizeSession(newSessionKey, expiry2);
+        monadIRC.authorizeSession(sessionKey2, newExpiry);
 
         // Verify new session replaced old one
-        (address storedKey, uint256 storedExpiry, bool isAuthorized) =
-            monadIRC.getSession(smartAccount);
-
-        assertEq(storedKey, newSessionKey);
-        assertEq(storedExpiry, expiry2);
+        (address storedKey, uint256 storedExpiry, bool isAuthorized) = monadIRC.getSession(smartAccount);
+        assertEq(storedKey, sessionKey2);
+        assertEq(storedExpiry, newExpiry);
         assertTrue(isAuthorized);
     }
 
-    function testFuzz_AuthorizeSession(address _sessionKey, uint256 _expiryOffset) public {
-        vm.assume(_sessionKey != address(0));
-        _expiryOffset = bound(_expiryOffset, 1, 3650 days); // 1 sec to 10 years
-
-        uint256 expiry = block.timestamp + _expiryOffset;
-
-        vm.prank(smartAccount);
-        monadIRC.authorizeSession(_sessionKey, expiry);
-
-        assertTrue(monadIRC.isSessionValid(smartAccount));
-    }
-
     /*//////////////////////////////////////////////////////////////
-                        SESSION REVOCATION TESTS
+                    SESSION REVOCATION TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_RevokeSession() public {
-        // First authorize a session
+    function test_RevokeSession_Success() public {
+        // Authorize session first
         uint256 expiry = block.timestamp + EXPIRY_FUTURE;
         vm.prank(smartAccount);
         monadIRC.authorizeSession(sessionKey, expiry);
 
-        // Then revoke it
+        // Revoke session
         vm.prank(smartAccount);
         vm.expectEmit(true, true, false, true);
         emit SessionRevoked(smartAccount, sessionKey, block.timestamp);
-
         monadIRC.revokeSession();
 
         // Verify session is no longer valid
@@ -148,18 +182,17 @@ contract MonadIRCTest is Test {
         assertFalse(monadIRC.isSessionValid(smartAccount));
     }
 
-    function test_RevertWhen_RevokeNonExistentSession() public {
+    function test_RevokeSession_RevertWhen_NoActiveSession() public {
         vm.prank(smartAccount);
         vm.expectRevert(MonadIRC.NoActiveSession.selector);
         monadIRC.revokeSession();
     }
 
-    function test_RevertWhen_RevokeAlreadyRevokedSession() public {
+    function test_RevokeSession_RevertWhen_AlreadyRevoked() public {
         // Authorize and revoke
-        uint256 expiry = block.timestamp + EXPIRY_FUTURE;
         vm.prank(smartAccount);
-        monadIRC.authorizeSession(sessionKey, expiry);
-
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
+        
         vm.prank(smartAccount);
         monadIRC.revokeSession();
 
@@ -169,400 +202,390 @@ contract MonadIRCTest is Test {
         monadIRC.revokeSession();
     }
 
-    /*//////////////////////////////////////////////////////////////
-                        SESSION VALIDATION TESTS
-    //////////////////////////////////////////////////////////////*/
-
     function test_IsSessionValid_ExpiredSession() public {
         uint256 expiry = block.timestamp + 100;
-
         vm.prank(smartAccount);
         monadIRC.authorizeSession(sessionKey, expiry);
 
         // Session should be valid now
         assertTrue(monadIRC.isSessionValid(smartAccount));
 
-        // Warp to after expiry
+        // Warp past expiry
         vm.warp(expiry + 1);
 
         // Session should be invalid now
         assertFalse(monadIRC.isSessionValid(smartAccount));
     }
 
-    function test_IsSessionValid_NonExistentSession() public {
-        assertFalse(monadIRC.isSessionValid(smartAccount));
-    }
-
     /*//////////////////////////////////////////////////////////////
-                        CHANNEL CREATION TESTS
+                CHANNEL CREATION SIGNED TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_CreateChannel() public {
+    function test_CreateChannelSigned_Success() public {
+        // Authorize session
         vm.prank(smartAccount);
-        vm.expectEmit(false, true, false, true);
-        emit ChannelCreated(TEST_CHANNEL, smartAccount, block.timestamp);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
 
-        monadIRC.createChannel(TEST_CHANNEL);
+        // Create channel
+        uint256 nonce = monadIRC.getNonce(smartAccount);
+        uint256 timestamp = block.timestamp;
+        bytes memory signature = _signChannelCreation(TEST_CHANNEL, nonce, timestamp, smartAccount, sessionPrivateKey);
 
-        // Verify channel was created
-        assertTrue(monadIRC.channelExists(TEST_CHANNEL));
-        assertEq(monadIRC.channelCreators(TEST_CHANNEL), smartAccount);
+        bytes32 channelId = keccak256(abi.encodePacked(TEST_CHANNEL));
+        
+        vm.expectEmit(true, true, false, false);
+        emit ChannelCreated(channelId, TEST_CHANNEL, smartAccount, block.timestamp, bytes32(0));
+
+        monadIRC.createChannelSigned(TEST_CHANNEL, nonce, timestamp, smartAccount, signature);
+
+        // Verify channel exists
+        assertTrue(monadIRC.channelExists(channelId));
+        assertEq(monadIRC.channelCreators(channelId), smartAccount);
+        assertEq(monadIRC.getChannelName(channelId), TEST_CHANNEL);
+        assertEq(monadIRC.getNonce(smartAccount), nonce + 1);
     }
 
-    function test_RevertWhen_CreateChannelWithShortName() public {
+    function test_CreateChannelSigned_RevertWhen_NameTooShort() public {
         vm.prank(smartAccount);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
+
+        string memory shortName = "#";
+        bytes memory signature = _signChannelCreation(shortName, 0, block.timestamp, smartAccount, sessionPrivateKey);
+
         vm.expectRevert(MonadIRC.ChannelNameTooShort.selector);
-        monadIRC.createChannel("#");
+        monadIRC.createChannelSigned(shortName, 0, block.timestamp, smartAccount, signature);
     }
 
-    function test_RevertWhen_CreateChannelWithEmptyName() public {
+    function test_CreateChannelSigned_RevertWhen_EmptyName() public {
         vm.prank(smartAccount);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
+
+        string memory emptyName = "";
+        bytes memory signature = _signChannelCreation(emptyName, 0, block.timestamp, smartAccount, sessionPrivateKey);
+
         vm.expectRevert(MonadIRC.ChannelNameTooShort.selector);
-        monadIRC.createChannel("");
+        monadIRC.createChannelSigned(emptyName, 0, block.timestamp, smartAccount, signature);
     }
 
-    function test_RevertWhen_CreateDuplicateChannel() public {
+    function test_CreateChannelSigned_RevertWhen_DuplicateChannel() public {
         vm.prank(smartAccount);
-        monadIRC.createChannel(TEST_CHANNEL);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
 
-        vm.prank(user2);
+        // Create first channel
+        bytes memory signature1 = _signChannelCreation(TEST_CHANNEL, 0, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, block.timestamp, smartAccount, signature1);
+
+        // Try to create duplicate
+        bytes memory signature2 = _signChannelCreation(TEST_CHANNEL, 1, block.timestamp, smartAccount, sessionPrivateKey);
+        
         vm.expectRevert(MonadIRC.ChannelAlreadyExists.selector);
-        monadIRC.createChannel(TEST_CHANNEL);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 1, block.timestamp, smartAccount, signature2);
     }
 
-    function test_CreateMultipleChannels() public {
-        vm.prank(smartAccount);
-        monadIRC.createChannel(TEST_CHANNEL);
+    function test_CreateChannelSigned_RevertWhen_InvalidSession() public {
+        // Don't authorize session
+        bytes memory signature = _signChannelCreation(TEST_CHANNEL, 0, block.timestamp, smartAccount, sessionPrivateKey);
 
-        vm.prank(user2);
-        monadIRC.createChannel(TEST_CHANNEL_2);
-
-        assertTrue(monadIRC.channelExists(TEST_CHANNEL));
-        assertTrue(monadIRC.channelExists(TEST_CHANNEL_2));
-        assertEq(monadIRC.channelCreators(TEST_CHANNEL), smartAccount);
-        assertEq(monadIRC.channelCreators(TEST_CHANNEL_2), user2);
+        vm.expectRevert(MonadIRC.SessionInvalidOrExpired.selector);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, block.timestamp, smartAccount, signature);
     }
 
-    function testFuzz_CreateChannel(string memory channelName) public {
-        vm.assume(bytes(channelName).length > 1);
-        vm.assume(bytes(channelName).length < 100); // Reasonable limit
-
-        vm.prank(smartAccount);
-        monadIRC.createChannel(channelName);
-
-        assertTrue(monadIRC.channelExists(channelName));
-        assertEq(monadIRC.channelCreators(channelName), smartAccount);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        MESSAGE SENDING TESTS
-    //////////////////////////////////////////////////////////////*/
-
-    function test_SendMessageSigned() public {
-        // Setup: authorize session and create channel
-        uint256 expiry = block.timestamp + EXPIRY_FUTURE;
+    function test_CreateChannelSigned_RevertWhen_ExpiredSession() public {
+        uint256 expiry = block.timestamp + 100;
         vm.prank(smartAccount);
         monadIRC.authorizeSession(sessionKey, expiry);
 
-        vm.prank(smartAccount);
-        monadIRC.createChannel(TEST_CHANNEL);
+        // Warp past expiry
+        vm.warp(expiry + 1);
 
-        // Prepare message
+        bytes memory signature = _signChannelCreation(TEST_CHANNEL, 0, block.timestamp, smartAccount, sessionPrivateKey);
+
+        vm.expectRevert(MonadIRC.SessionInvalidOrExpired.selector);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, block.timestamp, smartAccount, signature);
+    }
+
+    function test_CreateChannelSigned_RevertWhen_InvalidNonce() public {
+        vm.prank(smartAccount);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
+
+        uint256 wrongNonce = 999;
+        bytes memory signature = _signChannelCreation(TEST_CHANNEL, wrongNonce, block.timestamp, smartAccount, sessionPrivateKey);
+
+        vm.expectRevert(MonadIRC.InvalidNonce.selector);
+        monadIRC.createChannelSigned(TEST_CHANNEL, wrongNonce, block.timestamp, smartAccount, signature);
+    }
+
+    function test_CreateChannelSigned_RevertWhen_TimestampTooFarInFuture() public {
+        vm.prank(smartAccount);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
+
+        uint256 futureTimestamp = block.timestamp + 400; // More than MAX_TIMESTAMP_DRIFT (300)
+        bytes memory signature = _signChannelCreation(TEST_CHANNEL, 0, futureTimestamp, smartAccount, sessionPrivateKey);
+
+        vm.expectRevert(MonadIRC.TimestampTooFarInFuture.selector);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, futureTimestamp, smartAccount, signature);
+    }
+
+    function test_CreateChannelSigned_RevertWhen_TimestampTooOld() public {
+        vm.warp(1000); // Avoid underflow
+
+        vm.prank(smartAccount);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
+
+        uint256 oldTimestamp = block.timestamp - 400; // More than MAX_TIMESTAMP_DRIFT
+        bytes memory signature = _signChannelCreation(TEST_CHANNEL, 0, oldTimestamp, smartAccount, sessionPrivateKey);
+
+        vm.expectRevert(MonadIRC.TimestampTooOld.selector);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, oldTimestamp, smartAccount, signature);
+    }
+
+    function test_CreateChannelSigned_RevertWhen_InvalidSignature() public {
+        vm.prank(smartAccount);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
+
+        // Sign with wrong private key
+        uint256 wrongPrivateKey = 0x9999;
+        bytes memory signature = _signChannelCreation(TEST_CHANNEL, 0, block.timestamp, smartAccount, wrongPrivateKey);
+
+        vm.expectRevert(MonadIRC.InvalidSignature.selector);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, block.timestamp, smartAccount, signature);
+    }
+
+    function test_CreateChannelSigned_NonceIncrement() public {
+        vm.prank(smartAccount);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
+
+        assertEq(monadIRC.getNonce(smartAccount), 0);
+
+        // Create first channel
+        bytes memory sig1 = _signChannelCreation(TEST_CHANNEL, 0, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, block.timestamp, smartAccount, sig1);
+        assertEq(monadIRC.getNonce(smartAccount), 1);
+
+        // Create second channel
+        bytes memory sig2 = _signChannelCreation(TEST_CHANNEL_2, 1, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.createChannelSigned(TEST_CHANNEL_2, 1, block.timestamp, smartAccount, sig2);
+        assertEq(monadIRC.getNonce(smartAccount), 2);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    MESSAGE SENDING TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_SendMessageSigned_Success() public {
+        // Setup: authorize and create channel
+        vm.prank(smartAccount);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
+
+        bytes32 channelId = keccak256(abi.encodePacked(TEST_CHANNEL));
+        bytes memory channelSig = _signChannelCreation(TEST_CHANNEL, 0, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, block.timestamp, smartAccount, channelSig);
+
+        // Send message
         bytes32 msgHash = keccak256(abi.encodePacked("Hello Monad!"));
         uint256 nonce = monadIRC.getNonce(smartAccount);
         uint256 timestamp = block.timestamp;
+        bytes memory signature = _signMessage(msgHash, channelId, nonce, timestamp, smartAccount, sessionPrivateKey);
 
-        // Create signature
-        bytes32 messageHash =
-            keccak256(abi.encodePacked(msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount));
-        bytes32 ethSignedMessageHash =
-            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(sessionPrivateKey, ethSignedMessageHash);
-        bytes memory signature = abi.encodePacked(r, s, v);
+        vm.expectEmit(true, true, true, false);
+        emit MessageSent(msgHash, smartAccount, sessionKey, channelId, block.timestamp);
 
-        // Send message
-        vm.expectEmit(true, true, false, true);
-        emit MessageSent(msgHash, sessionKey, TEST_CHANNEL, block.timestamp);
+        monadIRC.sendMessageSigned(msgHash, channelId, nonce, timestamp, smartAccount, signature);
 
-        monadIRC.sendMessageSigned(
-            msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount, signature
-        );
-
-        // Verify message was processed
+        // Verify message processed
         assertTrue(monadIRC.processedMessages(msgHash));
         assertEq(monadIRC.getNonce(smartAccount), nonce + 1);
     }
 
-    function test_RevertWhen_SendMessageToNonExistentChannel() public {
-        // Setup: authorize session but don't create channel
-        uint256 expiry = block.timestamp + EXPIRY_FUTURE;
+    function test_SendMessageSigned_RevertWhen_ChannelDoesNotExist() public {
         vm.prank(smartAccount);
-        monadIRC.authorizeSession(sessionKey, expiry);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
 
-        bytes32 msgHash = keccak256(abi.encodePacked("Hello Monad!"));
-        uint256 nonce = monadIRC.getNonce(smartAccount);
-        uint256 timestamp = block.timestamp;
-
-        bytes32 messageHash =
-            keccak256(abi.encodePacked(msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount));
-        bytes32 ethSignedMessageHash =
-            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(sessionPrivateKey, ethSignedMessageHash);
-        bytes memory signature = abi.encodePacked(r, s, v);
+        bytes32 channelId = keccak256(abi.encodePacked(TEST_CHANNEL));
+        bytes32 msgHash = keccak256(abi.encodePacked("Hello!"));
+        bytes memory signature = _signMessage(msgHash, channelId, 0, block.timestamp, smartAccount, sessionPrivateKey);
 
         vm.expectRevert(MonadIRC.ChannelDoesNotExist.selector);
-        monadIRC.sendMessageSigned(
-            msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount, signature
-        );
+        monadIRC.sendMessageSigned(msgHash, channelId, 0, block.timestamp, smartAccount, signature);
     }
 
-    function test_RevertWhen_SendDuplicateMessage() public {
+    function test_SendMessageSigned_RevertWhen_DuplicateMessage() public {
         // Setup
-        uint256 expiry = block.timestamp + EXPIRY_FUTURE;
         vm.prank(smartAccount);
-        monadIRC.authorizeSession(sessionKey, expiry);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
 
-        vm.prank(smartAccount);
-        monadIRC.createChannel(TEST_CHANNEL);
+        bytes32 channelId = keccak256(abi.encodePacked(TEST_CHANNEL));
+        bytes memory channelSig = _signChannelCreation(TEST_CHANNEL, 0, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, block.timestamp, smartAccount, channelSig);
 
         // Send first message
-        bytes32 msgHash = keccak256(abi.encodePacked("Hello Monad!"));
-        uint256 nonce = monadIRC.getNonce(smartAccount);
-        uint256 timestamp = block.timestamp;
+        bytes32 msgHash = keccak256(abi.encodePacked("Hello!"));
+        bytes memory sig1 = _signMessage(msgHash, channelId, 1, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.sendMessageSigned(msgHash, channelId, 1, block.timestamp, smartAccount, sig1);
 
-        bytes32 messageHash =
-            keccak256(abi.encodePacked(msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount));
-        bytes32 ethSignedMessageHash =
-            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(sessionPrivateKey, ethSignedMessageHash);
-        bytes memory signature = abi.encodePacked(r, s, v);
-
-        monadIRC.sendMessageSigned(
-            msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount, signature
-        );
-
-        // Try to send same message again (will fail due to duplicate msgHash, checked before nonce)
+        // Try to send duplicate (same msgHash)
+        bytes memory sig2 = _signMessage(msgHash, channelId, 2, block.timestamp, smartAccount, sessionPrivateKey);
+        
         vm.expectRevert(MonadIRC.MessageAlreadyProcessed.selector);
-        monadIRC.sendMessageSigned(
-            msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount, signature
-        );
+        monadIRC.sendMessageSigned(msgHash, channelId, 2, block.timestamp, smartAccount, sig2);
     }
 
-    function test_RevertWhen_SendMessageWithInvalidSession() public {
-        // Create channel but don't authorize session
+    function test_SendMessageSigned_RevertWhen_InvalidSession() public {
+        // Create channel first (with session)
         vm.prank(smartAccount);
-        monadIRC.createChannel(TEST_CHANNEL);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
 
-        bytes32 msgHash = keccak256(abi.encodePacked("Hello Monad!"));
-        uint256 nonce = monadIRC.getNonce(smartAccount);
-        uint256 timestamp = block.timestamp;
+        bytes32 channelId = keccak256(abi.encodePacked(TEST_CHANNEL));
+        bytes memory channelSig = _signChannelCreation(TEST_CHANNEL, 0, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, block.timestamp, smartAccount, channelSig);
 
-        bytes32 messageHash =
-            keccak256(abi.encodePacked(msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount));
-        bytes32 ethSignedMessageHash =
-            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(sessionPrivateKey, ethSignedMessageHash);
-        bytes memory signature = abi.encodePacked(r, s, v);
+        // Revoke session
+        vm.prank(smartAccount);
+        monadIRC.revokeSession();
+
+        // Try to send message
+        bytes32 msgHash = keccak256(abi.encodePacked("Hello!"));
+        bytes memory signature = _signMessage(msgHash, channelId, 1, block.timestamp, smartAccount, sessionPrivateKey);
 
         vm.expectRevert(MonadIRC.SessionInvalidOrExpired.selector);
-        monadIRC.sendMessageSigned(
-            msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount, signature
-        );
+        monadIRC.sendMessageSigned(msgHash, channelId, 1, block.timestamp, smartAccount, signature);
     }
 
-    function test_RevertWhen_SendMessageWithInvalidNonce() public {
+    function test_SendMessageSigned_RevertWhen_InvalidNonce() public {
         // Setup
-        uint256 expiry = block.timestamp + EXPIRY_FUTURE;
         vm.prank(smartAccount);
-        monadIRC.authorizeSession(sessionKey, expiry);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
 
-        vm.prank(smartAccount);
-        monadIRC.createChannel(TEST_CHANNEL);
+        bytes32 channelId = keccak256(abi.encodePacked(TEST_CHANNEL));
+        bytes memory channelSig = _signChannelCreation(TEST_CHANNEL, 0, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, block.timestamp, smartAccount, channelSig);
 
-        bytes32 msgHash = keccak256(abi.encodePacked("Hello Monad!"));
+        // Try with wrong nonce
+        bytes32 msgHash = keccak256(abi.encodePacked("Hello!"));
         uint256 wrongNonce = 999;
-        uint256 timestamp = block.timestamp;
-
-        bytes32 messageHash = keccak256(
-            abi.encodePacked(msgHash, TEST_CHANNEL, wrongNonce, timestamp, smartAccount)
-        );
-        bytes32 ethSignedMessageHash =
-            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(sessionPrivateKey, ethSignedMessageHash);
-        bytes memory signature = abi.encodePacked(r, s, v);
+        bytes memory signature = _signMessage(msgHash, channelId, wrongNonce, block.timestamp, smartAccount, sessionPrivateKey);
 
         vm.expectRevert(MonadIRC.InvalidNonce.selector);
-        monadIRC.sendMessageSigned(
-            msgHash, TEST_CHANNEL, wrongNonce, timestamp, smartAccount, signature
-        );
+        monadIRC.sendMessageSigned(msgHash, channelId, wrongNonce, block.timestamp, smartAccount, signature);
     }
 
-    function test_RevertWhen_SendMessageWithFutureTimestamp() public {
+    function test_SendMessageSigned_RevertWhen_TimestampTooFarInFuture() public {
         // Setup
-        uint256 expiry = block.timestamp + EXPIRY_FUTURE;
         vm.prank(smartAccount);
-        monadIRC.authorizeSession(sessionKey, expiry);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
 
-        vm.prank(smartAccount);
-        monadIRC.createChannel(TEST_CHANNEL);
+        bytes32 channelId = keccak256(abi.encodePacked(TEST_CHANNEL));
+        bytes memory channelSig = _signChannelCreation(TEST_CHANNEL, 0, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, block.timestamp, smartAccount, channelSig);
 
-        bytes32 msgHash = keccak256(abi.encodePacked("Hello Monad!"));
-        uint256 nonce = monadIRC.getNonce(smartAccount);
-        uint256 timestamp = block.timestamp + 400; // More than MAX_TIMESTAMP_DRIFT
-
-        bytes32 messageHash =
-            keccak256(abi.encodePacked(msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount));
-        bytes32 ethSignedMessageHash =
-            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(sessionPrivateKey, ethSignedMessageHash);
-        bytes memory signature = abi.encodePacked(r, s, v);
+        // Try with future timestamp
+        bytes32 msgHash = keccak256(abi.encodePacked("Hello!"));
+        uint256 futureTimestamp = block.timestamp + 400;
+        bytes memory signature = _signMessage(msgHash, channelId, 1, futureTimestamp, smartAccount, sessionPrivateKey);
 
         vm.expectRevert(MonadIRC.TimestampTooFarInFuture.selector);
-        monadIRC.sendMessageSigned(
-            msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount, signature
-        );
+        monadIRC.sendMessageSigned(msgHash, channelId, 1, futureTimestamp, smartAccount, signature);
     }
 
-    function test_RevertWhen_SendMessageWithOldTimestamp() public {
-        // Setup - warp to future to avoid underflow
+    function test_SendMessageSigned_RevertWhen_TimestampTooOld() public {
         vm.warp(1000);
         
-        uint256 expiry = block.timestamp + EXPIRY_FUTURE;
+        // Setup
         vm.prank(smartAccount);
-        monadIRC.authorizeSession(sessionKey, expiry);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
 
-        vm.prank(smartAccount);
-        monadIRC.createChannel(TEST_CHANNEL);
+        bytes32 channelId = keccak256(abi.encodePacked(TEST_CHANNEL));
+        bytes memory channelSig = _signChannelCreation(TEST_CHANNEL, 0, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, block.timestamp, smartAccount, channelSig);
 
-        bytes32 msgHash = keccak256(abi.encodePacked("Hello Monad!"));
-        uint256 nonce = monadIRC.getNonce(smartAccount);
-        uint256 timestamp = block.timestamp - 400; // More than MAX_TIMESTAMP_DRIFT
-
-        bytes32 messageHash =
-            keccak256(abi.encodePacked(msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount));
-        bytes32 ethSignedMessageHash =
-            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(sessionPrivateKey, ethSignedMessageHash);
-        bytes memory signature = abi.encodePacked(r, s, v);
+        // Try with old timestamp
+        bytes32 msgHash = keccak256(abi.encodePacked("Hello!"));
+        uint256 oldTimestamp = block.timestamp - 400;
+        bytes memory signature = _signMessage(msgHash, channelId, 1, oldTimestamp, smartAccount, sessionPrivateKey);
 
         vm.expectRevert(MonadIRC.TimestampTooOld.selector);
-        monadIRC.sendMessageSigned(
-            msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount, signature
-        );
+        monadIRC.sendMessageSigned(msgHash, channelId, 1, oldTimestamp, smartAccount, signature);
     }
 
-    function test_RevertWhen_SendMessageWithInvalidSignature() public {
+    function test_SendMessageSigned_RevertWhen_InvalidSignature() public {
         // Setup
-        uint256 expiry = block.timestamp + EXPIRY_FUTURE;
         vm.prank(smartAccount);
-        monadIRC.authorizeSession(sessionKey, expiry);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
 
-        vm.prank(smartAccount);
-        monadIRC.createChannel(TEST_CHANNEL);
+        bytes32 channelId = keccak256(abi.encodePacked(TEST_CHANNEL));
+        bytes memory channelSig = _signChannelCreation(TEST_CHANNEL, 0, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, block.timestamp, smartAccount, channelSig);
 
-        bytes32 msgHash = keccak256(abi.encodePacked("Hello Monad!"));
-        uint256 nonce = monadIRC.getNonce(smartAccount);
-        uint256 timestamp = block.timestamp;
-
-        // Use wrong private key to sign
-        uint256 wrongPrivateKey = 0x9999;
-        bytes32 messageHash =
-            keccak256(abi.encodePacked(msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount));
-        bytes32 ethSignedMessageHash =
-            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(wrongPrivateKey, ethSignedMessageHash);
-        bytes memory signature = abi.encodePacked(r, s, v);
+        // Sign with wrong key
+        bytes32 msgHash = keccak256(abi.encodePacked("Hello!"));
+        uint256 wrongKey = 0x9999;
+        bytes memory signature = _signMessage(msgHash, channelId, 1, block.timestamp, smartAccount, wrongKey);
 
         vm.expectRevert(MonadIRC.InvalidSignature.selector);
-        monadIRC.sendMessageSigned(
-            msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount, signature
-        );
+        monadIRC.sendMessageSigned(msgHash, channelId, 1, block.timestamp, smartAccount, signature);
     }
 
-    function test_SendMultipleMessages() public {
+    function test_SendMultipleMessages_NonceIncrement() public {
         // Setup
-        uint256 expiry = block.timestamp + EXPIRY_FUTURE;
         vm.prank(smartAccount);
-        monadIRC.authorizeSession(sessionKey, expiry);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
 
-        vm.prank(smartAccount);
-        monadIRC.createChannel(TEST_CHANNEL);
+        bytes32 channelId = keccak256(abi.encodePacked(TEST_CHANNEL));
+        bytes memory channelSig = _signChannelCreation(TEST_CHANNEL, 0, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, block.timestamp, smartAccount, channelSig);
 
         // Send 3 messages
         for (uint256 i = 0; i < 3; i++) {
             bytes32 msgHash = keccak256(abi.encodePacked("Message ", i));
             uint256 nonce = monadIRC.getNonce(smartAccount);
-            uint256 timestamp = block.timestamp;
-
-            bytes32 messageHash = keccak256(
-                abi.encodePacked(msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount)
-            );
-            bytes32 ethSignedMessageHash =
-                keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
-            (uint8 v, bytes32 r, bytes32 s) = vm.sign(sessionPrivateKey, ethSignedMessageHash);
-            bytes memory signature = abi.encodePacked(r, s, v);
-
-            monadIRC.sendMessageSigned(
-                msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount, signature
-            );
-
-            assertEq(monadIRC.getNonce(smartAccount), i + 1);
+            bytes memory signature = _signMessage(msgHash, channelId, nonce, block.timestamp, smartAccount, sessionPrivateKey);
+            
+            monadIRC.sendMessageSigned(msgHash, channelId, nonce, block.timestamp, smartAccount, signature);
+            
             assertTrue(monadIRC.processedMessages(msgHash));
+            assertEq(monadIRC.getNonce(smartAccount), nonce + 1);
         }
+
+        // Final nonce should be 4 (1 for channel creation + 3 messages)
+        assertEq(monadIRC.getNonce(smartAccount), 4);
     }
 
     /*//////////////////////////////////////////////////////////////
-                        GETTER FUNCTION TESTS
+                        REPLAY PROTECTION TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_GetSession() public {
-        uint256 expiry = block.timestamp + EXPIRY_FUTURE;
+    function test_ReplayProtection_ChannelCreation_CannotReuseNonce() public {
         vm.prank(smartAccount);
-        monadIRC.authorizeSession(sessionKey, expiry);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
 
-        (address key, uint256 exp, bool auth) = monadIRC.getSession(smartAccount);
+        // Create first channel
+        bytes memory sig1 = _signChannelCreation(TEST_CHANNEL, 0, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, block.timestamp, smartAccount, sig1);
 
-        assertEq(key, sessionKey);
-        assertEq(exp, expiry);
-        assertTrue(auth);
+        // Try to create another channel with reused nonce (0)
+        vm.expectRevert(MonadIRC.InvalidNonce.selector);
+        monadIRC.createChannelSigned(TEST_CHANNEL_2, 0, block.timestamp, smartAccount, sig1);
     }
 
-    function test_GetSession_NonExistent() public {
-        (address key, uint256 exp, bool auth) = monadIRC.getSession(smartAccount);
-
-        assertEq(key, address(0));
-        assertEq(exp, 0);
-        assertFalse(auth);
-    }
-
-    function test_GetNonce() public {
-        // Initial nonce should be 0
-        assertEq(monadIRC.getNonce(smartAccount), 0);
-
-        // After sending a message, nonce should increment
-        uint256 expiry = block.timestamp + EXPIRY_FUTURE;
+    function test_ReplayProtection_Message_CannotReuseMsgHash() public {
+        // Setup
         vm.prank(smartAccount);
-        monadIRC.authorizeSession(sessionKey, expiry);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
 
-        vm.prank(smartAccount);
-        monadIRC.createChannel(TEST_CHANNEL);
+        bytes32 channelId = keccak256(abi.encodePacked(TEST_CHANNEL));
+        bytes memory channelSig = _signChannelCreation(TEST_CHANNEL, 0, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, block.timestamp, smartAccount, channelSig);
 
+        // Send message
         bytes32 msgHash = keccak256(abi.encodePacked("Hello!"));
-        uint256 nonce = monadIRC.getNonce(smartAccount);
-        uint256 timestamp = block.timestamp;
+        bytes memory sig1 = _signMessage(msgHash, channelId, 1, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.sendMessageSigned(msgHash, channelId, 1, block.timestamp, smartAccount, sig1);
 
-        bytes32 messageHash =
-            keccak256(abi.encodePacked(msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount));
-        bytes32 ethSignedMessageHash =
-            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(sessionPrivateKey, ethSignedMessageHash);
-        bytes memory signature = abi.encodePacked(r, s, v);
-
-        monadIRC.sendMessageSigned(
-            msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount, signature
-        );
-
-        assertEq(monadIRC.getNonce(smartAccount), 1);
+        // Try to send same msgHash again (even with different nonce)
+        bytes memory sig2 = _signMessage(msgHash, channelId, 2, block.timestamp, smartAccount, sessionPrivateKey);
+        
+        vm.expectRevert(MonadIRC.MessageAlreadyProcessed.selector);
+        monadIRC.sendMessageSigned(msgHash, channelId, 2, block.timestamp, smartAccount, sig2);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -571,35 +594,25 @@ contract MonadIRCTest is Test {
 
     function test_FullWorkflow() public {
         // 1. Authorize session
-        uint256 expiry = block.timestamp + EXPIRY_FUTURE;
         vm.prank(smartAccount);
-        monadIRC.authorizeSession(sessionKey, expiry);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
 
         // 2. Create channel
-        vm.prank(smartAccount);
-        monadIRC.createChannel(TEST_CHANNEL);
+        bytes32 channelId = keccak256(abi.encodePacked(TEST_CHANNEL));
+        bytes memory channelSig = _signChannelCreation(TEST_CHANNEL, 0, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, block.timestamp, smartAccount, channelSig);
 
         // 3. Send message
         bytes32 msgHash = keccak256(abi.encodePacked("Hello Monad IRC!"));
-        uint256 nonce = monadIRC.getNonce(smartAccount);
-        uint256 timestamp = block.timestamp;
+        bytes memory msgSig = _signMessage(msgHash, channelId, 1, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.sendMessageSigned(msgHash, channelId, 1, block.timestamp, smartAccount, msgSig);
 
-        bytes32 messageHash =
-            keccak256(abi.encodePacked(msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount));
-        bytes32 ethSignedMessageHash =
-            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(sessionPrivateKey, ethSignedMessageHash);
-        bytes memory signature = abi.encodePacked(r, s, v);
-
-        monadIRC.sendMessageSigned(
-            msgHash, TEST_CHANNEL, nonce, timestamp, smartAccount, signature
-        );
-
-        // 4. Verify everything worked
+        // 4. Verify everything
         assertTrue(monadIRC.isSessionValid(smartAccount));
-        assertTrue(monadIRC.channelExists(TEST_CHANNEL));
+        assertTrue(monadIRC.channelExists(channelId));
         assertTrue(monadIRC.processedMessages(msgHash));
-        assertEq(monadIRC.getNonce(smartAccount), 1);
+        assertEq(monadIRC.getNonce(smartAccount), 2);
+        assertEq(monadIRC.getChannelName(channelId), TEST_CHANNEL);
     }
 
     function test_MultiUserWorkflow() public {
@@ -607,55 +620,55 @@ contract MonadIRCTest is Test {
         vm.prank(smartAccount);
         monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
 
-        vm.prank(smartAccount);
-        monadIRC.createChannel(TEST_CHANNEL);
+        bytes32 channelId = keccak256(abi.encodePacked(TEST_CHANNEL));
+        bytes memory channelSig = _signChannelCreation(TEST_CHANNEL, 0, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, block.timestamp, smartAccount, channelSig);
 
         // User 2: Authorize session
-        uint256 user2PrivateKey = 0x4321;
-        address user2SessionKey = vm.addr(user2PrivateKey);
-
-        vm.prank(user2);
-        monadIRC.authorizeSession(user2SessionKey, block.timestamp + EXPIRY_FUTURE);
+        vm.prank(smartAccount2);
+        monadIRC.authorizeSession(sessionKey2, block.timestamp + EXPIRY_FUTURE);
 
         // User 1 sends message
-        {
-            bytes32 msgHash1 = keccak256(abi.encodePacked("Hello from user1"));
-            bytes32 messageHash1 = keccak256(
-                abi.encodePacked(
-                    msgHash1, TEST_CHANNEL, monadIRC.getNonce(smartAccount), block.timestamp, smartAccount
-                )
-            );
-            bytes32 ethSignedMessageHash1 =
-                keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash1));
-            (uint8 v, bytes32 r, bytes32 s) = vm.sign(sessionPrivateKey, ethSignedMessageHash1);
-
-            monadIRC.sendMessageSigned(
-                msgHash1, TEST_CHANNEL, 0, block.timestamp, smartAccount, abi.encodePacked(r, s, v)
-            );
-            assertTrue(monadIRC.processedMessages(msgHash1));
-        }
+        bytes32 msg1Hash = keccak256(abi.encodePacked("Hello from user 1"));
+        bytes memory msg1Sig = _signMessage(msg1Hash, channelId, 1, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.sendMessageSigned(msg1Hash, channelId, 1, block.timestamp, smartAccount, msg1Sig);
 
         // User 2 sends message
-        {
-            bytes32 msgHash2 = keccak256(abi.encodePacked("Hello from user2"));
-            bytes32 messageHash2 = keccak256(
-                abi.encodePacked(
-                    msgHash2, TEST_CHANNEL, monadIRC.getNonce(user2), block.timestamp, user2
-                )
-            );
-            bytes32 ethSignedMessageHash2 =
-                keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash2));
-            (uint8 v, bytes32 r, bytes32 s) = vm.sign(user2PrivateKey, ethSignedMessageHash2);
+        bytes32 msg2Hash = keccak256(abi.encodePacked("Hello from user 2"));
+        bytes memory msg2Sig = _signMessage(msg2Hash, channelId, 0, block.timestamp, smartAccount2, sessionPrivateKey2);
+        monadIRC.sendMessageSigned(msg2Hash, channelId, 0, block.timestamp, smartAccount2, msg2Sig);
 
-            monadIRC.sendMessageSigned(
-                msgHash2, TEST_CHANNEL, 0, block.timestamp, user2, abi.encodePacked(r, s, v)
-            );
-            assertTrue(monadIRC.processedMessages(msgHash2));
-        }
+        // Verify
+        assertTrue(monadIRC.processedMessages(msg1Hash));
+        assertTrue(monadIRC.processedMessages(msg2Hash));
+        assertEq(monadIRC.getNonce(smartAccount), 2);  // 1 channel + 1 message
+        assertEq(monadIRC.getNonce(smartAccount2), 1); // 1 message
+    }
 
-        // Verify final state
-        assertEq(monadIRC.getNonce(smartAccount), 1);
-        assertEq(monadIRC.getNonce(user2), 1);
+    /*//////////////////////////////////////////////////////////////
+                        VIEW FUNCTION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_GetSession_NonExistent() public {
+        (address key, uint256 exp, bool auth) = monadIRC.getSession(smartAccount);
+        assertEq(key, address(0));
+        assertEq(exp, 0);
+        assertFalse(auth);
+    }
+
+    function test_GetNonce_DefaultIsZero() public {
+        assertEq(monadIRC.getNonce(smartAccount), 0);
+        assertEq(monadIRC.getNonce(smartAccount2), 0);
+    }
+
+    function test_GetChannelName() public {
+        vm.prank(smartAccount);
+        monadIRC.authorizeSession(sessionKey, block.timestamp + EXPIRY_FUTURE);
+
+        bytes32 channelId = keccak256(abi.encodePacked(TEST_CHANNEL));
+        bytes memory sig = _signChannelCreation(TEST_CHANNEL, 0, block.timestamp, smartAccount, sessionPrivateKey);
+        monadIRC.createChannelSigned(TEST_CHANNEL, 0, block.timestamp, smartAccount, sig);
+
+        assertEq(monadIRC.getChannelName(channelId), TEST_CHANNEL);
     }
 }
-

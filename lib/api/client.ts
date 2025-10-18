@@ -1,4 +1,5 @@
 import { ConvexHttpClient } from "convex/browser";
+import { ConvexReactClient } from "convex/react";
 
 // These imports will work once you run: npx convex dev
 import { api as convexApi } from "../../convex/_generated/api";
@@ -7,6 +8,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 // Initialize Convex client
 const CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || "";
 const convex = new ConvexHttpClient(CONVEX_URL);
+const convexReact = new ConvexReactClient(CONVEX_URL);
 
 /**
  * API client for Monad IRC using Convex backend
@@ -93,12 +95,25 @@ export const monadIrcApi = {
     });
   },
 
+  async updateMessageStatus(
+    messageId: Id<"messages">,
+    status: "pending" | "confirmed" | "failed",
+    txHash?: string
+  ) {
+    return await convex.mutation(convexApi.messages.updateMessageStatus, {
+      messageId,
+      status,
+      txHash,
+    });
+  },
+
   // Sessions
-  async authorizeSession(smartAccount: string, sessionKey: string, expiry: string) {
+  async authorizeSession(smartAccount: string, sessionKey: string, expiry: string, userId: Id<"users">) {
     return await convex.mutation(convexApi.sessions.authorizeSession, {
       smartAccount,
       sessionKey,
       expiry,
+      userId,
     });
   },
 
@@ -120,7 +135,7 @@ export const monadIrcApi = {
 export const api = monadIrcApi;
 
 // Export the Convex client instance for advanced usage (subscriptions, etc.)
-export { convex };
+export { convex, convexReact };
 
 // Export types for convenience
 export type { Id };

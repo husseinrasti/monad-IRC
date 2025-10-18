@@ -1,17 +1,17 @@
 "use client";
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from "react";
-import { IRCState, User, Channel, Message, SessionKey, TerminalLine } from "@/lib/types";
+import { IRCState, User, Channel, Message, DelegationSession, TerminalLine } from "@/lib/types";
 
 interface IRCContextType extends IRCState {
   setUser: (user: User | null) => void;
-  setSessionKey: (key: SessionKey | null) => void;
+  setDelegationSession: (session: DelegationSession | null) => void;
   setCurrentChannel: (channel: Channel | null) => void;
   addChannel: (channel: Channel) => void;
   addMessage: (message: Message) => void;
   updateMessage: (id: string, updates: Partial<Message>) => void;
   setConnected: (connected: boolean) => void;
-  setSessionAuthorized: (authorized: boolean) => void;
+  setDelegationActive: (active: boolean) => void;
   setWalletMonitoring: (monitoring: boolean) => void;
   terminalLines: TerminalLine[];
   addTerminalLine: (content: string, type?: TerminalLine["type"]) => void;
@@ -22,12 +22,12 @@ const IRCContext = createContext<IRCContextType | undefined>(undefined);
 
 export const IRCProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [sessionKey, setSessionKey] = useState<SessionKey | null>(null);
+  const [delegationSession, setDelegationSession] = useState<DelegationSession | null>(null);
   const [currentChannel, setCurrentChannel] = useState<Channel | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isConnected, setConnected] = useState(false);
-  const [isSessionAuthorized, setSessionAuthorized] = useState(false);
+  const [isDelegationActive, setDelegationActive] = useState(false);
   const [isWalletMonitoring, setWalletMonitoring] = useState(false);
   const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([
     {
@@ -186,21 +186,21 @@ export const IRCProvider = ({ children }: { children: ReactNode }) => {
 
   const value: IRCContextType = {
     user,
-    sessionKey,
+    delegationSession,
     currentChannel,
     channels,
     messages,
     isConnected,
-    isSessionAuthorized,
+    isDelegationActive,
     isWalletMonitoring,
     setUser,
-    setSessionKey,
+    setDelegationSession,
     setCurrentChannel,
     addChannel,
     addMessage,
     updateMessage,
     setConnected,
-    setSessionAuthorized,
+    setDelegationActive,
     setWalletMonitoring,
     terminalLines,
     addTerminalLine,

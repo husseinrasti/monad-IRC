@@ -113,9 +113,20 @@ http.route({
       };
       const { channelName, creator, txHash } = body;
 
+      console.log("[Webhook] ChannelCreated event received:", {
+        channelName,
+        creator,
+        txHash,
+        timestamp: new Date().toISOString(),
+      });
+
       if (!channelName || !creator) {
+        console.error("[Webhook] Missing required fields:", { channelName, creator });
         return new Response(
-          JSON.stringify({ error: "Missing required fields" }),
+          JSON.stringify({ 
+            error: "Missing required fields",
+            received: { channelName, creator, txHash }
+          }),
           { status: 400, headers: { "Content-Type": "application/json" } }
         );
       }
@@ -127,14 +138,26 @@ http.route({
         txHash,
       });
 
+      console.log("[Webhook] Channel created successfully:", channelName);
+
       return new Response(
-        JSON.stringify({ success: true, message: "Channel created" }),
+        JSON.stringify({ 
+          success: true, 
+          message: "Channel created",
+          channel: channelName,
+          creator,
+          txHash 
+        }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     } catch (error) {
-      console.error("Error handling channel-created webhook:", error);
+      console.error("[Webhook] Error handling channel-created:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
       return new Response(
-        JSON.stringify({ error: "Internal server error" }),
+        JSON.stringify({ 
+          error: "Internal server error",
+          details: errorMessage 
+        }),
         { status: 500, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -156,28 +179,49 @@ http.route({
       };
       const { msgHash, txHash } = body;
 
+      console.log("[Webhook] MessageSent event received:", {
+        msgHash,
+        txHash,
+        timestamp: new Date().toISOString(),
+      });
+
       if (!msgHash) {
+        console.error("[Webhook] Missing msgHash");
         return new Response(
-          JSON.stringify({ error: "Missing msgHash" }),
+          JSON.stringify({ 
+            error: "Missing msgHash",
+            received: { msgHash, txHash }
+          }),
           { status: 400, headers: { "Content-Type": "application/json" } }
         );
       }
 
       // Update message status to confirmed
-      await ctx.runMutation(internal.messages.updateMessageStatus, {
+      await ctx.runMutation(internal.messages.updateMessageStatusByHash, {
         msgHash,
         status: "confirmed",
         txHash,
       });
 
+      console.log("[Webhook] Message status updated to confirmed:", msgHash);
+
       return new Response(
-        JSON.stringify({ success: true, message: "Message confirmed" }),
+        JSON.stringify({ 
+          success: true, 
+          message: "Message confirmed",
+          msgHash,
+          txHash 
+        }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     } catch (error) {
-      console.error("Error handling message-sent webhook:", error);
+      console.error("[Webhook] Error handling message-sent:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
       return new Response(
-        JSON.stringify({ error: "Internal server error" }),
+        JSON.stringify({ 
+          error: "Internal server error",
+          details: errorMessage 
+        }),
         { status: 500, headers: { "Content-Type": "application/json" } }
       );
     }

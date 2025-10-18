@@ -36,8 +36,8 @@ export const MONAD_IRC_ABI = [
     "inputs": [
       {
         "name": "",
-        "type": "string",
-        "internalType": "string"
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "outputs": [
@@ -55,8 +55,8 @@ export const MONAD_IRC_ABI = [
     "inputs": [
       {
         "name": "",
-        "type": "string",
-        "internalType": "string"
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "outputs": [
@@ -70,16 +70,74 @@ export const MONAD_IRC_ABI = [
   },
   {
     "type": "function",
-    "name": "createChannel",
+    "name": "channelNames",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "createChannelSigned",
     "inputs": [
       {
         "name": "channelName",
         "type": "string",
         "internalType": "string"
+      },
+      {
+        "name": "nonce",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "timestamp",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "smartAccount",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "signature",
+        "type": "bytes",
+        "internalType": "bytes"
       }
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getChannelName",
+    "inputs": [
+      {
+        "name": "channelId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -203,9 +261,9 @@ export const MONAD_IRC_ABI = [
         "internalType": "bytes32"
       },
       {
-        "name": "channel",
-        "type": "string",
-        "internalType": "string"
+        "name": "channelId",
+        "type": "bytes32",
+        "internalType": "bytes32"
       },
       {
         "name": "nonce",
@@ -265,6 +323,12 @@ export const MONAD_IRC_ABI = [
     "name": "ChannelCreated",
     "inputs": [
       {
+        "name": "channelId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
         "name": "channelName",
         "type": "string",
         "indexed": false,
@@ -281,6 +345,12 @@ export const MONAD_IRC_ABI = [
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      },
+      {
+        "name": "txMeta",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -296,16 +366,22 @@ export const MONAD_IRC_ABI = [
         "internalType": "bytes32"
       },
       {
+        "name": "smartAccount",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
         "name": "sessionKey",
         "type": "address",
         "indexed": true,
         "internalType": "address"
       },
       {
-        "name": "channel",
-        "type": "string",
+        "name": "channelId",
+        "type": "bytes32",
         "indexed": false,
-        "internalType": "string"
+        "internalType": "bytes32"
       },
       {
         "name": "timestamp",

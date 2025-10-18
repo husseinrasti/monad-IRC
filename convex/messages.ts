@@ -153,9 +153,37 @@ export const getMessagesByChannelName = query({
 });
 
 /**
- * Update message status (internal - called by webhooks)
+ * Update message status (public - called by frontend after tx confirmation)
  */
-export const updateMessageStatus = internalMutation({
+export const updateMessageStatus = mutation({
+  args: {
+    messageId: v.id("messages"),
+    status: v.union(v.literal("pending"), v.literal("confirmed"), v.literal("failed")),
+    txHash: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    // Get the message
+    const message = await ctx.db.get(args.messageId);
+
+    if (!message) {
+      throw new Error("Message not found");
+    }
+
+    // Update status
+    await ctx.db.patch(args.messageId, {
+      status: args.status,
+      txHash: args.txHash || message.txHash,
+    });
+
+    return null;
+  },
+});
+
+/**
+ * Update message status by msgHash (internal - called by webhooks)
+ */
+export const updateMessageStatusByHash = internalMutation({
   args: {
     msgHash: v.string(),
     status: v.union(v.literal("pending"), v.literal("confirmed"), v.literal("failed")),
@@ -163,6 +191,12 @@ export const updateMessageStatus = internalMutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    console.log("[Convex] updateMessageStatusByHash called:", {
+      msgHash: args.msgHash,
+      status: args.status,
+      txHash: args.txHash,
+    });
+
     // Find message by msgHash
     const message = await ctx.db
       .query("messages")
@@ -170,12 +204,30 @@ export const updateMessageStatus = internalMutation({
       .first();
 
     if (!message) {
-      console.error(`Message not found for msgHash: ${args.msgHash}`);
+      console.error(`[Convex] Message not found for msgHash: ${args.msgHash}`);
+      // Log all messages to help debug
+      const allMessages = await ctx.db.query("messages").take(10);
+      console.log(`[Convex] Recent messages in database:`, 
+        allMessages.map(m => ({ id: m._id, msgHash: m.msgHash, status: m.status }))
+      );
       return null;
     }
 
+    console.log(`[Convex] Found message:`, {
+      id: message._id,
+      currentStatus: message.status,
+      newStatus: args.status,
+    });
+
     // Update status
     await ctx.db.patch(message._id, {
+      status: args.status,
+      txHash: args.txHash || message.txHash,
+    });
+
+    console.log(`[Convex] Message status updated successfully:`, {
+      id: message._id,
+      msgHash: args.msgHash,
       status: args.status,
       txHash: args.txHash || message.txHash,
     });

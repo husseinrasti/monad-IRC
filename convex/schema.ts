@@ -13,25 +13,26 @@ import { v } from "convex/values";
 export default defineSchema({
   // Users table
   users: defineTable({
-    walletAddress: v.string(),
+    walletAddress: v.string(), // EOA wallet address from MetaMask
     username: v.string(),
-    smartAccountAddress: v.optional(v.string()),
+    smartAccountAddress: v.optional(v.string()), // Smart Account address (computed when user connects)
     verificationSignature: v.optional(v.string()),
     lastConnected: v.optional(v.number()),
     activeSessionId: v.optional(v.id("sessions")),
   })
     .index("by_wallet", ["walletAddress"])
-    .index("by_username", ["username"]),
+    .index("by_username", ["username"])
+    .index("by_smart_account", ["smartAccountAddress"]),
 
-  // Sessions table for session key management
+  // Sessions table for delegation session management
   sessions: defineTable({
-    smartAccount: v.string(),
-    sessionKey: v.string(),
-    expiry: v.string(), // bigint as string
-    isAuthorized: v.boolean(),
+    smartAccount: v.string(), // Smart Account address
+    sessionKey: v.string(), // Delegated signer address
+    expiry: v.string(), // Expiry timestamp as string
+    isAuthorized: v.boolean(), // Whether session is authorized on-chain
     userId: v.id("users"), // Link session to user
-    isActive: v.optional(v.boolean()),
-    lastUsed: v.optional(v.number()),
+    isActive: v.boolean(), // Whether session is currently active
+    lastUsed: v.optional(v.number()), // Last time session was used
   })
     .index("by_smart_account", ["smartAccount"])
     .index("by_session_key", ["sessionKey"])

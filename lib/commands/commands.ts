@@ -19,6 +19,15 @@ export const HELP_TEXTS: Record<string, { usage: string; description: string; ex
     usage: "authorize session",
     description: "Authorize a session key for gasless transactions (requires MetaMask confirmation)",
   },
+  "session balance": {
+    usage: "session balance",
+    description: "Check session key wallet balance (needs MON for gas)",
+  },
+  "session fund": {
+    usage: "session fund <amount>",
+    description: "Fund session key wallet with MON for gas (requires MetaMask)",
+    examples: ["session fund 0.1", "session fund 0.5"],
+  },
   create: {
     usage: "create #channelName",
     description: "Creates a new channel (on-chain + in DB)",
@@ -63,7 +72,9 @@ export const parseCommand = (input: string): { command: string; args: string[] }
   // Handle multi-word commands
   const multiWordCommands = [
     "connect wallet", 
-    "authorize session", 
+    "authorize session",
+    "session balance",
+    "session fund",
     "list channels",
     "username set",
     "username clear",
@@ -115,6 +126,8 @@ export const getAllCommandsHelp = (): string[] => {
     "Wallet & Account:",
     "  connect wallet          - Connect your MetaMask wallet",
     "  authorize session       - Authorize session key for gasless transactions",
+    "  session balance         - Check session key wallet balance",
+    "  session fund <amount>   - Fund session key wallet with MON for gas",
     "  username set <name>     - Set a custom username",
     "  username clear          - Reset username to wallet address",
     "  logout                  - Disconnect and end session",

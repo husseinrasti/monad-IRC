@@ -65,6 +65,12 @@ export const createChannelInternal = internalMutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    console.log("[Convex] createChannelInternal called:", {
+      name: args.name,
+      creator: args.creator,
+      txHash: args.txHash,
+    });
+
     // Check if channel already exists
     const existingChannel = await ctx.db
       .query("channels")
@@ -72,12 +78,34 @@ export const createChannelInternal = internalMutation({
       .first();
 
     if (existingChannel) {
-      console.log(`Channel ${args.name} already exists`);
+      console.log(`[Convex] Channel ${args.name} already exists with ID: ${existingChannel._id}`);
       return null;
     }
 
-    // Create channel (no need to verify creator for webhooks)
-    await ctx.db.insert("channels", {
+    // Ensure creator user exists (create if not)
+    let creatorUser = await ctx.db
+      .query("users")
+      .withIndex("by_wallet", (q) => q.eq("walletAddress", args.creator))
+      .first();
+
+    if (!creatorUser) {
+      console.log(`[Convex] Creator user not found, creating user for: ${args.creator}`);
+      const userId = await ctx.db.insert("users", {
+        walletAddress: args.creator,
+        username: args.creator.slice(0, 8), // Default username
+      });
+      console.log(`[Convex] Created user with ID: ${userId}`);
+    }
+
+    // Create channel
+    const channelId = await ctx.db.insert("channels", {
+      name: args.name,
+      creator: args.creator,
+      txHash: args.txHash,
+    });
+
+    console.log(`[Convex] Channel created successfully:`, {
+      id: channelId,
       name: args.name,
       creator: args.creator,
       txHash: args.txHash,

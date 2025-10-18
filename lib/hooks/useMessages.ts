@@ -1,41 +1,79 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useIRC } from "@/lib/context/IRCContext";
-import { api } from "@/lib/api/client";
+import { api, convexReact } from "@/lib/api/client";
+import { api as convexApi } from "../../convex/_generated/api";
 import { Message } from "@/lib/types";
 
 export const useMessages = () => {
-  const { currentChannel, messages, addMessage, updateMessage, addTerminalLine } = useIRC();
+  const { currentChannel, messages, addMessage, updateMessage, addTerminalLine, user } = useIRC();
+  const [subscribedChannelId, setSubscribedChannelId] = useState<string | null>(null);
+
+  // Subscribe to messages in real-time for current channel
+  useEffect(() => {
+    if (!currentChannel || subscribedChannelId === currentChannel.id) return;
+
+    const unsubscribe = convexReact
+      .watchQuery(convexApi.messages.getChannelMessages, { 
+        channelId: currentChannel.id as any,
+        limit: 100 
+      })
+      .onUpdate(() => {
+        api
+          .getChannelMessages(currentChannel.id as any, 100)
+          .then((fetchedMessages) => {
+            fetchedMessages.forEach((msg) => {
+              // Get username from user or fallback to wallet address
+              api.getUserByWallet(msg.senderWallet).then((msgUser) => {
+                const messageObj: Message = {
+                  id: msg._id,
+                  channelId: msg.channelId,
+                  userId: msgUser?._id || "unknown",
+                  username: msgUser?.username || msg.senderWallet.slice(0, 8),
+                  content: msg.content,
+                  timestamp: new Date(msg._creationTime),
+                  status: msg.status,
+                  txHash: msg.txHash,
+                  msgHash: msg.msgHash,
+                };
+                addMessage(messageObj);
+              }).catch(console.error);
+            });
+          })
+          .catch((error) => {
+            console.error("Failed to fetch messages:", error);
+          });
+      });
+
+    setSubscribedChannelId(currentChannel.id);
+
+    return () => {
+      unsubscribe();
+      setSubscribedChannelId(null);
+    };
+  }, [currentChannel, subscribedChannelId, addMessage]);
 
   const fetchMessages = useCallback(async (channelId: string) => {
     try {
-      const fetchedMessages = await api.getChannelMessages(parseInt(channelId));
+      const fetchedMessages = await api.getChannelMessages(channelId as any, 100);
       
-      fetchedMessages.forEach((msg: {
-        id: number;
-        channel_id: number;
-        user_id: number;
-        username: string;
-        msg_hash: string;
-        content: string;
-        status: "pending" | "confirmed" | "failed";
-        timestamp: string;
-        tx_hash?: string;
-      }) => {
+      for (const msg of fetchedMessages) {
+        const msgUser = await api.getUserByWallet(msg.senderWallet);
+        
         const messageObj: Message = {
-          id: msg.id.toString(),
-          channelId: msg.channel_id.toString(),
-          userId: msg.user_id.toString(),
-          username: msg.username,
+          id: msg._id,
+          channelId: msg.channelId,
+          userId: msgUser?._id || "unknown",
+          username: msgUser?.username || msg.senderWallet.slice(0, 8),
           content: msg.content,
-          timestamp: new Date(msg.timestamp),
+          timestamp: new Date(msg._creationTime),
           status: msg.status,
-          txHash: msg.tx_hash,
-          msgHash: msg.msg_hash,
+          txHash: msg.txHash,
+          msgHash: msg.msgHash,
         };
         addMessage(messageObj);
-      });
+      }
     } catch (error) {
       console.error("Failed to fetch messages:", error);
     }
@@ -43,15 +81,15 @@ export const useMessages = () => {
 
   const sendNewMessage = useCallback(async (
     channelId: string,
-    userId: string,
+    senderWallet: string,
     content: string,
     msgHash: string,
     txHash?: string
   ) => {
     try {
-      const newMessage = await api.createMessage(
-        parseInt(channelId),
-        parseInt(userId),
+      const newMessage = await api.sendMessage(
+        channelId as any,
+        senderWallet,
         msgHash,
         content,
         txHash
@@ -64,12 +102,6 @@ export const useMessages = () => {
       return null;
     }
   }, [addTerminalLine]);
-
-  useEffect(() => {
-    if (currentChannel) {
-      fetchMessages(currentChannel.id);
-    }
-  }, [currentChannel, fetchMessages]);
 
   return {
     messages,
