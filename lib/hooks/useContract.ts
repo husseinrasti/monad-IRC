@@ -95,8 +95,19 @@ export const useContract = () => {
     const smartAccount = getGlobalSmartAccount();
     const bundlerClient = getGlobalBundlerClient();
 
-    if (!smartAccount || !bundlerClient) {
+    if (!smartAccount) {
       addTerminalLine("❌ Smart Account not initialized. Please reconnect your wallet.", "error");
+      return false;
+    }
+
+    // Check if bundler is available
+    if (!bundlerClient) {
+      addTerminalLine("❌ Bundler client not available.", "error");
+      addTerminalLine("⚠️  Monad testnet doesn't have ERC-4337 bundler support yet.", "warning");
+      addTerminalLine("💡 You need to either:", "info");
+      addTerminalLine("  1. Set up your own bundler service", "info");
+      addTerminalLine("  2. Use a public bundler that supports Monad", "info");
+      addTerminalLine("  3. Set NEXT_PUBLIC_BUNDLER_URL in your environment", "info");
       return false;
     }
 
@@ -205,8 +216,8 @@ export const useContract = () => {
             value: BigInt(0),
           },
         ],
-        maxFeePerGas: BigInt(1000000000), // 1 Gwei
-        maxPriorityFeePerGas: BigInt(1000000000), // 1 Gwei
+        maxFeePerGas: BigInt(200000000000), // 200 Gwei
+        maxPriorityFeePerGas: BigInt(200000000000), // 200 Gwei
       });
 
       addTerminalLine(`User operation hash: ${userOpHash}`, "system");
@@ -228,9 +239,33 @@ export const useContract = () => {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       addTerminalLine(`❌ Channel creation failed: ${errorMessage}`, "error");
       
-      if (errorMessage.includes("insufficient funds")) {
-        addTerminalLine("⚠️  Smart Account needs more MON for gas!", "error");
-        addTerminalLine("Send MON to your Smart Account address.", "info");
+      // Check for session-related errors (0xbd791d1f = SessionInvalidOrExpired)
+      if (errorMessage.includes("0xbd791d1f") || 
+          errorMessage.includes("SessionInvalidOrExpired") ||
+          errorMessage.includes("session")) {
+        addTerminalLine("", "error");
+        addTerminalLine("⚠️  No active delegation session found!", "error");
+        addTerminalLine("", "info");
+        addTerminalLine("💡 You must authorize a session key first:", "info");
+        addTerminalLine("   1. Run: authorize session", "info");
+        addTerminalLine("   2. Confirm in MetaMask", "info");
+        addTerminalLine("   3. Wait for confirmation", "info");
+        addTerminalLine("   4. Then try creating the channel again", "info");
+      }
+      // Check for various funding-related errors
+      else if (errorMessage.includes("insufficient funds") || 
+          errorMessage.includes("AA21") || 
+          errorMessage.includes("didn't pay prefund") ||
+          errorMessage.includes("does not have sufficient funds")) {
+        addTerminalLine("", "error");
+        addTerminalLine("⚠️  Your Smart Account needs MON tokens to pay for gas!", "error");
+        addTerminalLine(`Smart Account Address: ${user.smartAccountAddress}`, "info");
+        addTerminalLine("", "info");
+        addTerminalLine("💡 To fund your Smart Account, run:", "info");
+        addTerminalLine("   fund <amount>", "info");
+        addTerminalLine("   Example: fund 0.1", "info");
+        addTerminalLine("", "info");
+        addTerminalLine("Or send MON directly from MetaMask to your Smart Account address.", "info");
       } else if (errorMessage.includes("MetaMask")) {
         addTerminalLine("Please ensure MetaMask is installed and unlocked.", "info");
       }
@@ -338,8 +373,8 @@ export const useContract = () => {
             value: BigInt(0),
           },
         ],
-        maxFeePerGas: BigInt(1000000000), // 1 Gwei
-        maxPriorityFeePerGas: BigInt(1000000000), // 1 Gwei
+        maxFeePerGas: BigInt(200000000000), // 200 Gwei
+        maxPriorityFeePerGas: BigInt(200000000000), // 200 Gwei
       });
 
       addTerminalLine(`User operation hash: ${userOpHash}`, "system");
@@ -360,9 +395,33 @@ export const useContract = () => {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       addTerminalLine(`❌ Message send failed: ${errorMessage}`, "error");
       
-      if (errorMessage.includes("insufficient funds")) {
-        addTerminalLine("⚠️  Smart Account needs more MON for gas!", "error");
-        addTerminalLine("Send MON to your Smart Account address.", "info");
+      // Check for session-related errors (0xbd791d1f = SessionInvalidOrExpired)
+      if (errorMessage.includes("0xbd791d1f") || 
+          errorMessage.includes("SessionInvalidOrExpired") ||
+          errorMessage.includes("session")) {
+        addTerminalLine("", "error");
+        addTerminalLine("⚠️  No active delegation session found!", "error");
+        addTerminalLine("", "info");
+        addTerminalLine("💡 You must authorize a session key first:", "info");
+        addTerminalLine("   1. Run: authorize session", "info");
+        addTerminalLine("   2. Confirm in MetaMask", "info");
+        addTerminalLine("   3. Wait for confirmation", "info");
+        addTerminalLine("   4. Then try sending the message again", "info");
+      }
+      // Check for various funding-related errors
+      else if (errorMessage.includes("insufficient funds") || 
+          errorMessage.includes("AA21") || 
+          errorMessage.includes("didn't pay prefund") ||
+          errorMessage.includes("does not have sufficient funds")) {
+        addTerminalLine("", "error");
+        addTerminalLine("⚠️  Your Smart Account needs MON tokens to pay for gas!", "error");
+        addTerminalLine(`Smart Account Address: ${user.smartAccountAddress}`, "info");
+        addTerminalLine("", "info");
+        addTerminalLine("💡 To fund your Smart Account, run:", "info");
+        addTerminalLine("   fund <amount>", "info");
+        addTerminalLine("   Example: fund 0.1", "info");
+        addTerminalLine("", "info");
+        addTerminalLine("Or send MON directly from MetaMask to your Smart Account address.", "info");
       } else if (errorMessage.includes("MetaMask")) {
         addTerminalLine("Please ensure MetaMask is installed and unlocked.", "info");
       }
@@ -373,6 +432,39 @@ export const useContract = () => {
       setIsLoading(false);
     }
   }, [user, isDelegationActive, getSessionKeyWallet, createDomainHash, addEIP191Prefix, addTerminalLine, ensureSmartAccountReady]);
+
+  /**
+   * Check Smart Account balance
+   */
+  const checkSmartAccountBalance = useCallback(async () => {
+    if (!user || !user.smartAccountAddress) {
+      addTerminalLine("❌ User or Smart Account not found", "error");
+      return null;
+    }
+
+    try {
+      const publicClient = createMonadPublicClient();
+      const balance = await publicClient.getBalance({
+        address: user.smartAccountAddress as Address,
+      });
+      
+      const balanceInMon = Number(balance) / 1e18;
+      addTerminalLine(`💰 Smart Account Balance: ${balanceInMon.toFixed(6)} MON`, "system");
+      addTerminalLine(`   Address: ${user.smartAccountAddress}`, "info");
+      
+      if (balanceInMon < 0.001) {
+        addTerminalLine("", "warning");
+        addTerminalLine("⚠️  Balance is very low! Fund your Smart Account to send transactions.", "warning");
+        addTerminalLine("   Run: fund <amount> (e.g., fund 0.1)", "info");
+      }
+      
+      return balance;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      addTerminalLine(`❌ Failed to check balance: ${errorMessage}`, "error");
+      return null;
+    }
+  }, [user, addTerminalLine]);
 
   /**
    * Check session key wallet balance (for informational purposes)
@@ -462,6 +554,7 @@ export const useContract = () => {
   return {
     createChannel,
     sendMessage,
+    checkSmartAccountBalance,
     checkSessionKeyBalance,
     fundSmartAccount,
     isLoading,

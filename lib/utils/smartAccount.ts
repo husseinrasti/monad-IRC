@@ -11,12 +11,11 @@ import {
   type Address,
   type Chain,
 } from "viem";
+import { createBundlerClient, type BundlerClient } from "viem/account-abstraction";
 import { 
   toMetaMaskSmartAccount, 
   Implementation,
-  createInfuraBundlerClient,
   type MetaMaskSmartAccount,
-  type InfuraBundlerClient,
 } from "@metamask/delegation-toolkit";
 import { monadTestnet } from "./monadChain";
 
@@ -60,12 +59,26 @@ export const createMonadPublicClient = (): PublicClient => {
 
 /**
  * Create a bundler client for handling Smart Account user operations
+ * Note: Monad testnet may not have bundler support yet
  */
-export const createMonadBundlerClient = () => {
-  return createInfuraBundlerClient({
-    chain: monadTestnet,
-    transport: http(BUNDLER_URL),
-  });
+export const createMonadBundlerClient = (): BundlerClient | null => {
+  try {
+    // Check if a custom bundler URL is configured
+    const customBundlerUrl = process.env.NEXT_PUBLIC_BUNDLER_URL;
+    
+    if (!customBundlerUrl) {
+      console.warn("No bundler URL configured. Bundler client not available.");
+      return null;
+    }
+    
+    return createBundlerClient({
+      chain: monadTestnet,
+      transport: http(customBundlerUrl),
+    });
+  } catch (error) {
+    console.error("Failed to create bundler client:", error);
+    return null;
+  }
 };
 
 /**
@@ -92,40 +105,33 @@ export const createMetaMaskWalletClient = async (): Promise<WalletClient | null>
  */
 export const createMetaMaskSmartAccount = async (
   publicClient: PublicClient,
-  walletClient: WalletClient,
   ownerAddress: Address
 ): Promise<MetaMaskSmartAccount | null> => {
   try {
     console.log("Creating MetaMask Smart Account for:", ownerAddress);
 
-    // Get the account from wallet client (this has signing capabilities via MetaMask)
-    const [account] = await walletClient.getAddresses();
-    
-    if (!account || account !== ownerAddress) {
-      throw new Error("Wallet client account mismatch");
-    }
-
-    // Create a wallet client with the account bound to it for signing
-    const walletClientWithAccount = createWalletClient({
+    // Create a wallet client for signing through MetaMask
+    const signingWalletClient = createWalletClient({
       account: ownerAddress,
       chain: monadTestnet,
       transport: custom(window.ethereum!),
     });
 
     // Create MetaMask Smart Account using the Delegation Toolkit
-    // For Hybrid implementation, we use WalletSignerConfig which needs walletClient with account
+    // Using Hybrid implementation with EOA owner
+    // deployParams: [owner, keyIds, xValues, yValues] for Hybrid
     const smartAccount = await toMetaMaskSmartAccount({
       client: publicClient,
       implementation: Implementation.Hybrid,
       deployParams: [
         ownerAddress, // owner address
-        [], // keyIds (for WebAuthn, empty for ECDSA)
-        [], // xValues (for WebAuthn, empty for ECDSA)
-        [], // yValues (for WebAuthn, empty for ECDSA)
+        [], // keyIds (empty for ECDSA-only)
+        [], // xValues (empty for ECDSA-only)
+        [], // yValues (empty for ECDSA-only)
       ],
       deploySalt: "0x0000000000000000000000000000000000000000000000000000000000000000",
-      signer: { 
-        walletClient: walletClientWithAccount,
+      signer: {
+        walletClient: signingWalletClient,
       },
     });
 
@@ -162,7 +168,7 @@ export const isSmartAccountDeployed = async (
  */
 export const ensureSmartAccountDeployed = async (
   smartAccount: MetaMaskSmartAccount,
-  bundlerClient: InfuraBundlerClient
+  bundlerClient: BundlerClient | null
 ): Promise<boolean> => {
   try {
     const publicClient = createMonadPublicClient();
@@ -171,6 +177,11 @@ export const ensureSmartAccountDeployed = async (
     if (isDeployed) {
       console.log("Smart Account already deployed at:", smartAccount.address);
       return true;
+    }
+
+    if (!bundlerClient) {
+      console.log("Smart Account not deployed. Without bundler, deployment must be done manually via direct transaction.");
+      return true; // Allow transaction to proceed
     }
 
     console.log("Smart Account not deployed yet. It will be deployed automatically with your first transaction.");
@@ -193,7 +204,7 @@ export const initializeSmartAccount = async (): Promise<{
   smartAccount: MetaMaskSmartAccount;
   walletClient: WalletClient;
   publicClient: PublicClient;
-  bundlerClient: InfuraBundlerClient;
+  bundlerClient: BundlerClient | null;
 } | null> => {
   try {
     // Validate MetaMask is installed
@@ -207,6 +218,11 @@ export const initializeSmartAccount = async (): Promise<{
 
     const publicClient = createMonadPublicClient();
     const bundlerClient = createMonadBundlerClient();
+    
+    if (!bundlerClient) {
+      console.warn("⚠️  Bundler client not available. Account abstraction features will be limited.");
+      console.warn("To enable full AA features, configure NEXT_PUBLIC_BUNDLER_URL in your environment.");
+    }
 
     // Get accounts from MetaMask
     const accounts = await walletClient.getAddresses();
@@ -216,10 +232,9 @@ export const initializeSmartAccount = async (): Promise<{
 
     const eoaAddress = accounts[0];
 
-    // Create MetaMask Smart Account using wallet client for signing
+    // Create MetaMask Smart Account
     const smartAccount = await createMetaMaskSmartAccount(
       publicClient, 
-      walletClient, 
       eoaAddress
     );
     

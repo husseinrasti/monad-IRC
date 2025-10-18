@@ -5,7 +5,8 @@ import { useIRC } from "@/lib/context/IRCContext";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { type Address } from "viem";
-import { type MetaMaskSmartAccount, type InfuraBundlerClient } from "@metamask/delegation-toolkit";
+import { type BundlerClient } from "viem/account-abstraction";
+import { type MetaMaskSmartAccount } from "@metamask/delegation-toolkit";
 import { 
   initializeSmartAccount,
   isMetaMaskInstalled,
@@ -17,7 +18,7 @@ import {
 // Global storage for Smart Account and bundler client
 // This is needed because these instances must persist across renders
 let globalSmartAccount: MetaMaskSmartAccount | null = null;
-let globalBundlerClient: InfuraBundlerClient | null = null;
+let globalBundlerClient: BundlerClient | null | undefined = null;
 
 /**
  * Hook for managing Smart Account connection and state

@@ -19,13 +19,22 @@ export const HELP_TEXTS: Record<string, { usage: string; description: string; ex
     usage: "authorize session",
     description: "Authorize a session key for gasless transactions (requires MetaMask confirmation)",
   },
+  balance: {
+    usage: "balance",
+    description: "Check your Smart Account balance (this is what pays for gas)",
+  },
+  fund: {
+    usage: "fund <amount>",
+    description: "Fund your Smart Account with MON tokens for gas (requires MetaMask)",
+    examples: ["fund 0.1", "fund 0.5"],
+  },
   "session balance": {
     usage: "session balance",
-    description: "Check session key wallet balance (needs MON for gas)",
+    description: "Check session key wallet balance (for informational purposes only)",
   },
   "session fund": {
     usage: "session fund <amount>",
-    description: "Fund session key wallet with MON for gas (requires MetaMask)",
+    description: "Fund session key wallet with MON (not typically needed)",
     examples: ["session fund 0.1", "session fund 0.5"],
   },
   create: {
@@ -126,8 +135,8 @@ export const getAllCommandsHelp = (): string[] => {
     "Wallet & Account:",
     "  connect wallet          - Connect your MetaMask wallet",
     "  authorize session       - Authorize session key for gasless transactions",
-    "  session balance         - Check session key wallet balance",
-    "  session fund <amount>   - Fund session key wallet with MON for gas",
+    "  balance                 - Check Smart Account balance (for gas)",
+    "  fund <amount>           - Fund Smart Account with MON tokens",
     "  username set <name>     - Set a custom username",
     "  username clear          - Reset username to wallet address",
     "  logout                  - Disconnect and end session",
@@ -142,6 +151,10 @@ export const getAllCommandsHelp = (): string[] => {
     "  help [command]          - Show this help or help for specific command",
     "  man [command]           - Alias for 'help'",
     "  clear                   - Clear terminal screen",
+    "",
+    "Advanced (optional):",
+    "  session balance         - Check session key balance (info only)",
+    "  session fund <amount>   - Fund session key wallet (rarely needed)",
     "",
     "Type 'help <command>' or 'man <command>' for more details on a specific command.",
   ];

@@ -111,7 +111,13 @@ NEXT_PUBLIC_CONTRACT_ADDRESS=0xYourContractAddress
 # Monad testnet (defaults work)
 NEXT_PUBLIC_MONAD_RPC_URL=https://testnet-rpc.monad.xyz
 NEXT_PUBLIC_MONAD_CHAIN_ID=10143
+
+# ERC-4337 Bundler URL (REQUIRED for account abstraction)
+# See BUNDLER_SETUP.md for configuration options
+NEXT_PUBLIC_BUNDLER_URL=https://your-bundler-url
 ```
+
+**⚠️  Important**: Account abstraction features require a bundler service.
 
 #### 4. Deploy Smart Contract
 
@@ -138,6 +144,22 @@ npm run dev
 
 Open http://localhost:3000 🎉
 
+## ⚠️ Important: Smart Account Funding
+
+**Your Smart Account needs MON tokens to pay for gas!**
+
+After connecting your wallet, you must fund your Smart Account:
+
+```bash
+# Check balance
+> balance
+
+# Fund with 0.1 MON (recommended for testing)
+> fund 0.1
+```
+
+Without funding, you'll get an error: `AA21 didn't pay prefund`
+
 ## Usage Guide
 
 ### Available Commands
@@ -147,6 +169,8 @@ Open http://localhost:3000 🎉
 | `help` | Show all available commands |
 | `connect wallet` | Connect MetaMask wallet |
 | `authorize session` | Authorize session key for gasless transactions |
+| `balance` | Check Smart Account balance |
+| `fund <amount>` | Fund Smart Account with MON tokens |
 | `create #channelName` | Create a new channel |
 | `join #channelName` | Join an existing channel |
 | `leave` | Leave current channel |
@@ -158,10 +182,12 @@ Open http://localhost:3000 🎉
 
 1. Open http://localhost:3000
 2. Run `connect wallet` to connect MetaMask
-3. Run `authorize session` to enable gasless messaging (one-time setup)
-4. Run `create #general` to create your first channel
-5. Run `join #general` to enter the channel
-6. Start chatting!
+3. Run `balance` to check your Smart Account balance
+4. Run `fund 0.1` to add MON tokens to your Smart Account (required for gas)
+5. Run `authorize session` to enable gasless messaging (one-time setup)
+6. Run `create #general` to create your first channel
+7. Run `join #general` to enter the channel
+8. Start chatting!
 
 ## Smart Contract Architecture
 
@@ -230,10 +256,6 @@ MIT License - see LICENSE file for details
 ## 📚 Documentation
 
 - **[QUICK_START.md](./QUICK_START.md)** - Get started in 5 minutes
-- **[CONVEX_SETUP.md](./CONVEX_SETUP.md)** - Detailed Convex setup guide
-- **[CONVEX_MIGRATION.md](./CONVEX_MIGRATION.md)** - Migration from PostgreSQL
-- **[PRD.md](./PRD.md)** - Product Requirements Document
-- **[SCRIPTS_UPDATED.md](./SCRIPTS_UPDATED.md)** - Installation scripts guide
 
 ## Support
 

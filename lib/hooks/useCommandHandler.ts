@@ -35,6 +35,7 @@ export const useCommandHandler = () => {
   const { 
     createChannel: createChannelOnChain, 
     sendMessage: sendMessageOnChain,
+    checkSmartAccountBalance,
     checkSessionKeyBalance,
     fundSmartAccount,
   } = useContract();
@@ -154,6 +155,37 @@ export const useCommandHandler = () => {
             break;
           }
           await authorizeDelegation();
+          break;
+
+        case "balance":
+          if (!isConnected) {
+            addTerminalLine("Please connect your Smart Account first.", "error");
+            break;
+          }
+          await checkSmartAccountBalance();
+          break;
+
+        case "fund":
+          if (!isConnected) {
+            addTerminalLine("Please connect your Smart Account first.", "error");
+            break;
+          }
+          if (args.length === 0) {
+            addTerminalLine("Usage: fund <amount>", "error");
+            addTerminalLine("Example: fund 0.1", "info");
+            addTerminalLine("", "info");
+            addTerminalLine("This will send MON from your MetaMask EOA to your Smart Account.", "info");
+            addTerminalLine("Your Smart Account needs MON to pay for gas on transactions.", "info");
+            break;
+          }
+          
+          const fundAmount = args[0];
+          if (isNaN(parseFloat(fundAmount)) || parseFloat(fundAmount) <= 0) {
+            addTerminalLine("Invalid amount. Please provide a positive number.", "error");
+            break;
+          }
+          
+          await fundSmartAccount(fundAmount);
           break;
 
         case "session balance":

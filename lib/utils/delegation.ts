@@ -54,22 +54,16 @@ export const createSessionKey = async (
 
 /**
  * Authorize a session key on-chain via the Smart Account
- * This requires a MetaMask transaction to authorize the session key
+ * This must be sent through the Smart Account (via bundler) so msg.sender is the Smart Account
  */
 export const authorizeSessionKeyOnChain = async (
   sessionKeyData: SessionKeyData,
-  smartAccountAddress: Address
+  smartAccountAddress: Address,
+  smartAccount: any, // MetaMaskSmartAccount
+  bundlerClient: any  // BundlerClient
 ): Promise<Hash | null> => {
   try {
     validateMetaMaskWallet();
-
-    const walletClient = createWalletClient({
-      chain: monadTestnet,
-      transport: custom(window.ethereum!),
-    });
-    
-    // Get accounts from wallet client
-    const [account] = await walletClient.getAddresses();
 
     // Encode the authorizeSession function call
     const data = encodeFunctionData({
@@ -78,17 +72,56 @@ export const authorizeSessionKeyOnChain = async (
       args: [sessionKeyData.address, BigInt(sessionKeyData.validUntil)],
     });
 
-    // Send transaction via MetaMask to authorize the session key
-    const hash = await walletClient.sendTransaction({
-      to: CONTRACT_ADDRESS,
-      data,
-      account,
-      chain: monadTestnet,
+    console.log("📤 Sending authorization user operation via bundler...");
+    
+    // Send transaction via Smart Account bundler so msg.sender is the Smart Account
+    const userOpHash = await bundlerClient.sendUserOperation({
+      account: smartAccount,
+      calls: [
+        {
+          to: CONTRACT_ADDRESS,
+          data,
+          value: BigInt(0),
+        },
+      ],
+      maxFeePerGas: BigInt(200000000000), // 200 Gwei
+      maxPriorityFeePerGas: BigInt(200000000000), // 200 Gwei
     });
 
-    return hash;
+    console.log("✅ User operation submitted! Hash:", userOpHash);
+    console.log("⏳ Waiting for bundler to process (max 180s)...");
+
+    // Wait for user operation to be included (with 180s timeout - increased for slow bundlers)
+    try {
+      const receipt = await Promise.race([
+        bundlerClient.waitForUserOperationReceipt({ hash: userOpHash }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("TIMEOUT")), 180000) // 180 seconds = 3 minutes
+        )
+      ]) as any;
+
+      console.log("📋 Received receipt:", receipt);
+
+      if (receipt && receipt.success) {
+        console.log("✅ Authorization successful! Tx hash:", receipt.receipt.transactionHash);
+        return receipt.receipt.transactionHash as Hash;
+      }
+
+      console.error("❌ Authorization failed. Receipt:", receipt);
+      throw new Error("Transaction failed on-chain");
+    } catch (timeoutError: any) {
+      if (timeoutError.message === "TIMEOUT") {
+        // Timeout occurred - transaction is still processing
+        console.warn("⚠️ Bundler timeout - transaction may still be processing");
+        const error: any = new Error("BUNDLER_TIMEOUT: Transaction submitted but bundler taking longer than expected");
+        error.code = "BUNDLER_TIMEOUT";
+        error.userOpHash = userOpHash; // Attach the user op hash to the error
+        throw error;
+      }
+      throw timeoutError;
+    }
   } catch (error) {
-    console.error("Failed to authorize session key:", error);
+    console.error("❌ Failed to authorize session key:", error);
     throw error;
   }
 };
@@ -119,21 +152,15 @@ export const isSessionKeyValid = (sessionKeyData: SessionKeyData): boolean => {
 
 /**
  * Revoke a session key on-chain
- * This requires a MetaMask transaction
+ * This must be sent through the Smart Account (via bundler) so msg.sender is the Smart Account
  */
 export const revokeSessionKeyOnChain = async (
-  smartAccountAddress: Address
+  smartAccountAddress: Address,
+  smartAccount: any, // MetaMaskSmartAccount
+  bundlerClient: any  // BundlerClient
 ): Promise<Hash | null> => {
   try {
     validateMetaMaskWallet();
-
-    const walletClient = createWalletClient({
-      chain: monadTestnet,
-      transport: custom(window.ethereum!),
-    });
-    
-    // Get accounts from wallet client
-    const [account] = await walletClient.getAddresses();
 
     const data = encodeFunctionData({
       abi: MONAD_IRC_ABI,
@@ -141,14 +168,30 @@ export const revokeSessionKeyOnChain = async (
       args: [],
     });
 
-    const hash = await walletClient.sendTransaction({
-      to: CONTRACT_ADDRESS,
-      data,
-      account,
-      chain: monadTestnet,
+    // Send transaction via Smart Account bundler so msg.sender is the Smart Account
+    const userOpHash = await bundlerClient.sendUserOperation({
+      account: smartAccount,
+      calls: [
+        {
+          to: CONTRACT_ADDRESS,
+          data,
+          value: BigInt(0),
+        },
+      ],
+      maxFeePerGas: BigInt(200000000000), // 200 Gwei
+      maxPriorityFeePerGas: BigInt(200000000000), // 200 Gwei
     });
 
-    return hash;
+    // Wait for user operation to be included
+    const receipt = await bundlerClient.waitForUserOperationReceipt({
+      hash: userOpHash,
+    });
+
+    if (receipt.success) {
+      return receipt.receipt.transactionHash as Hash;
+    }
+
+    return null;
   } catch (error) {
     console.error("Failed to revoke session key:", error);
     throw error;
