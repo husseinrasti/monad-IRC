@@ -12,92 +12,6 @@ import { internal } from "./_generated/api";
 const http = httpRouter();
 
 /**
- * Webhook endpoint for SessionAuthorized event
- * POST /api/webhook/session-authorized
- */
-http.route({
-  path: "/api/webhook/session-authorized",
-  method: "POST",
-  handler: httpAction(async (ctx, req) => {
-    try {
-      const body = await req.json() as {
-        smartAccount?: string;
-        sessionKey?: string;
-        expiry?: string;
-      };
-      const { smartAccount, sessionKey, expiry } = body;
-
-      if (!smartAccount || !sessionKey || !expiry) {
-        return new Response(
-          JSON.stringify({ error: "Missing required fields" }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        );
-      }
-
-      // Call the internal mutation to authorize the session
-      await ctx.runMutation(internal.sessions.authorizeSessionInternal, {
-        smartAccount,
-        sessionKey,
-        expiry: expiry.toString(),
-      });
-
-      return new Response(
-        JSON.stringify({ success: true, message: "Session authorized" }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
-    } catch (error) {
-      console.error("Error handling session-authorized webhook:", error);
-      return new Response(
-        JSON.stringify({ error: "Internal server error" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      );
-    }
-  }),
-});
-
-/**
- * Webhook endpoint for SessionRevoked event
- * POST /api/webhook/session-revoked
- */
-http.route({
-  path: "/api/webhook/session-revoked",
-  method: "POST",
-  handler: httpAction(async (ctx, req) => {
-    try {
-      const body = await req.json() as {
-        smartAccount?: string;
-        sessionKey?: string;
-      };
-      const { smartAccount, sessionKey } = body;
-
-      if (!smartAccount || !sessionKey) {
-        return new Response(
-          JSON.stringify({ error: "Missing required fields" }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        );
-      }
-
-      // Call the internal mutation to revoke the session
-      await ctx.runMutation(internal.sessions.revokeSession, {
-        smartAccount,
-        sessionKey,
-      });
-
-      return new Response(
-        JSON.stringify({ success: true, message: "Session revoked" }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
-    } catch (error) {
-      console.error("Error handling session-revoked webhook:", error);
-      return new Response(
-        JSON.stringify({ error: "Internal server error" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      );
-    }
-  }),
-});
-
-/**
  * Webhook endpoint for ChannelCreated event
  * POST /api/webhook/channel-created
  */
@@ -248,4 +162,3 @@ http.route({
 });
 
 export default http;
-

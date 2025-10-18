@@ -45,10 +45,6 @@ export const useSmartAccount = () => {
 
   // Convex mutations and queries
   const createOrGetUserMutation = useMutation(api.users.createOrGetUser);
-  const getUserWithSession = useQuery(
-    api.users.getUserWithSession,
-    user ? { walletAddress: user.walletAddress } : "skip"
-  );
 
   /**
    * Get the stored Smart Account instance
@@ -133,13 +129,8 @@ export const useSmartAccount = () => {
 
       setUser(newUser);
 
-      // Check if user has an active delegation session
-      if (convexUser.activeSessionId) {
-        addTerminalLine("Active delegation session found! Restoring...", "system");
-        // Session will be restored by the useDelegation hook
-      } else {
-        addTerminalLine("No active delegation session. Use 'authorize session' to create one.", "info");
-      }
+      addTerminalLine("User profile loaded successfully!", "system");
+      addTerminalLine("Use 'authorize session' to enable gasless transactions.", "info");
 
       return newUser;
     } catch (error) {
@@ -341,12 +332,7 @@ export const useSmartAccount = () => {
         // Setup wallet monitoring
         setupWalletMonitoring();
         
-        // Check for active delegation session
-        if (getUserWithSession?.activeSession) {
-          addTerminalLine("Active delegation session restored!", "system");
-        } else {
-          addTerminalLine("Run 'authorize session' to enable gasless transactions.", "info");
-        }
+        addTerminalLine("Run 'authorize session' to enable gasless transactions.", "info");
       }
 
     } catch (error: unknown) {
@@ -374,7 +360,6 @@ export const useSmartAccount = () => {
     signVerificationMessage, 
     restoreOrCreateUser, 
     setupWalletMonitoring,
-    getUserWithSession,
   ]);
 
   /**

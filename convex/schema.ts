@@ -4,9 +4,11 @@ import { v } from "convex/values";
 /**
  * Convex Schema for Monad IRC
  * 
+ * Simplified schema for Account Abstraction with MetaMask Delegation
+ * No session management - handled by MetaMask Delegation SDK + Pimlico
+ * 
  * Tables:
  * - users: Wallet-based user accounts
- * - sessions: Session keys for gasless transactions
  * - channels: IRC channels
  * - messages: Chat messages with on-chain verification
  */
@@ -18,32 +20,15 @@ export default defineSchema({
     smartAccountAddress: v.optional(v.string()), // Smart Account address (computed when user connects)
     verificationSignature: v.optional(v.string()),
     lastConnected: v.optional(v.number()),
-    activeSessionId: v.optional(v.id("sessions")),
   })
     .index("by_wallet", ["walletAddress"])
     .index("by_username", ["username"])
     .index("by_smart_account", ["smartAccountAddress"]),
 
-  // Sessions table for delegation session management
-  sessions: defineTable({
-    smartAccount: v.string(), // Smart Account address
-    sessionKey: v.string(), // Delegated signer address
-    expiry: v.string(), // Expiry timestamp as string
-    isAuthorized: v.boolean(), // Whether session is authorized on-chain
-    userId: v.id("users"), // Link session to user
-    isActive: v.boolean(), // Whether session is currently active
-    lastUsed: v.optional(v.number()), // Last time session was used
-  })
-    .index("by_smart_account", ["smartAccount"])
-    .index("by_session_key", ["sessionKey"])
-    .index("by_smart_account_and_session_key", ["smartAccount", "sessionKey"])
-    .index("by_user", ["userId"])
-    .index("by_user_and_active", ["userId", "isActive"]),
-
   // Channels table
   channels: defineTable({
     name: v.string(),
-    creator: v.string(), // wallet address
+    creator: v.string(), // smart account address
     txHash: v.optional(v.string()),
   })
     .index("by_name", ["name"])
@@ -52,7 +37,7 @@ export default defineSchema({
   // Messages table
   messages: defineTable({
     channelId: v.id("channels"),
-    senderWallet: v.string(),
+    senderWallet: v.string(), // smart account address
     msgHash: v.string(),
     content: v.string(),
     status: v.union(v.literal("pending"), v.literal("confirmed"), v.literal("failed")),
@@ -63,4 +48,3 @@ export default defineSchema({
     .index("by_msg_hash", ["msgHash"])
     .index("by_sender", ["senderWallet"]),
 });
-

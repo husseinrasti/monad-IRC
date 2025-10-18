@@ -1,0 +1,17 @@
+type Channel {
+  id: ID!
+  channelName: String!
+  creator: String!
+  timestamp: BigInt!
+  createdAt: BigInt!
+}
+
+type Message {
+  id: ID!
+  msgHash: String!
+  sender: String!
+  channel: String!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  transactionHash: String!
+}

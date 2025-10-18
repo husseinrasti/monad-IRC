@@ -4,7 +4,7 @@ import { useIRC } from "@/lib/context/IRCContext";
 import { truncateAddress } from "@/lib/utils";
 
 const StatusBar = () => {
-  const { user, isConnected, isSessionAuthorized, currentChannel } = useIRC();
+  const { user, isConnected, currentChannel } = useIRC();
 
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-terminal-bg border-t border-terminal-border px-4 py-1 text-xs text-terminal-text font-mono flex items-center justify-between">
@@ -38,16 +38,12 @@ const StatusBar = () => {
           <span>{isConnected ? "Connected" : "Disconnected"}</span>
         </div>
         
-        {isConnected && (
+        {isConnected && user && user.smartAccountAddress && (
           <>
             <span className="text-terminal-muted">|</span>
             <div className="flex items-center gap-1">
-              <div
-                className={`w-2 h-2 rounded-full ${
-                  isSessionAuthorized ? "bg-green-500" : "bg-yellow-500"
-                }`}
-              />
-              <span>{isSessionAuthorized ? "Session Active" : "No Session"}</span>
+              <div className="w-2 h-2 rounded-full bg-green-500" />
+              <span>Smart Account Ready</span>
             </div>
           </>
         )}

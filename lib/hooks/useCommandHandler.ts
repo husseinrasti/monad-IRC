@@ -36,7 +36,6 @@ export const useCommandHandler = () => {
     createChannel: createChannelOnChain, 
     sendMessage: sendMessageOnChain,
     checkSmartAccountBalance,
-    checkSessionKeyBalance,
     fundSmartAccount,
   } = useContract();
 
@@ -186,18 +185,6 @@ export const useCommandHandler = () => {
           }
           
           await fundSmartAccount(fundAmount);
-          break;
-
-        case "session balance":
-          if (!isConnected) {
-            addTerminalLine("Please connect your Smart Account first.", "error");
-            break;
-          }
-          if (!isDelegationActive) {
-            addTerminalLine("Please authorize delegation session first.", "error");
-            break;
-          }
-          await checkSessionKeyBalance();
           break;
 
         case "session fund":
@@ -428,7 +415,6 @@ export const useCommandHandler = () => {
       createChannelOnChain,
       addMessage,
       updateMessage,
-      checkSessionKeyBalance,
       fundSmartAccount,
     ]
   );

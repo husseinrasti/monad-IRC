@@ -19,7 +19,7 @@ const convexReact = new ConvexReactClient(CONVEX_URL);
  */
 export const monadIrcApi = {
   // Users
-  async createOrGetUser(walletAddress: string, username: string, smartAccountAddress?: string) {
+  async createOrGetUser(walletAddress: string, username: string, smartAccountAddress: string) {
     return await convex.mutation(convexApi.users.createOrGetUser, {
       walletAddress,
       username,
@@ -107,28 +107,6 @@ export const monadIrcApi = {
     });
   },
 
-  // Sessions
-  async authorizeSession(smartAccount: string, sessionKey: string, expiry: string, userId: Id<"users">) {
-    return await convex.mutation(convexApi.sessions.authorizeSession, {
-      smartAccount,
-      sessionKey,
-      expiry,
-      userId,
-    });
-  },
-
-  async getSession(smartAccount: string, sessionKey: string) {
-    return await convex.query(convexApi.sessions.getSession, {
-      smartAccount,
-      sessionKey,
-    });
-  },
-
-  async getSessionsBySmartAccount(smartAccount: string) {
-    return await convex.query(convexApi.sessions.getSessionsBySmartAccount, {
-      smartAccount,
-    });
-  },
 };
 
 // Export with a clear name

@@ -8,11 +8,6 @@ import {
   encodeFunctionData, 
   keccak256, 
   toHex, 
-  encodeAbiParameters, 
-  parseAbiParameters,
-  concat,
-  toBytes,
-  hexToBytes,
 } from "viem";
 import { MONAD_IRC_ABI } from "@/lib/contract/abi";
 import { 
@@ -21,65 +16,16 @@ import {
   ensureSmartAccountDeployed,
   isMetaMaskInstalled,
 } from "@/lib/utils/smartAccount";
-import { 
-  createSessionKeyWalletClient,
-  getNonce,
-  type SessionKeyData,
-} from "@/lib/utils/delegation";
-import { useDelegation } from "./useDelegation";
 import { getGlobalSmartAccount, getGlobalBundlerClient } from "./useSmartAccount";
-import { monadTestnet } from "@/lib/utils/monadChain";
 
 /**
  * Hook for interacting with the MonadIRC smart contract
  * Uses MetaMask Smart Account with bundler client for all transactions
- * Supports session keys for gasless signing
+ * No more session keys or signatures - direct smart account calls
  */
 export const useContract = () => {
-  const { addTerminalLine, user, isDelegationActive } = useIRC();
-  const { getStoredSessionKey } = useDelegation();
+  const { addTerminalLine, user } = useIRC();
   const [isLoading, setIsLoading] = useState(false);
-
-  /**
-   * Create domain-bound hash matching contract's _domainHash function
-   * keccak256(abi.encode(block.chainid, address(this), payload))
-   */
-  const createDomainHash = useCallback((payload: `0x${string}`): `0x${string}` => {
-    const chainId = BigInt(monadTestnet.id);
-    const contractAddr = CONTRACT_ADDRESS;
-    
-    // Encode exactly as Solidity does: abi.encode(uint256, address, bytes)
-    const encoded = encodeAbiParameters(
-      parseAbiParameters("uint256, address, bytes"),
-      [chainId, contractAddr, payload]
-    );
-    
-    return keccak256(encoded);
-  }, []);
-
-  /**
-   * Add EIP-191 prefix to hash (matching Solidity's toEthSignedMessageHash)
-   * "\x19Ethereum Signed Message:\n32" + hash
-   */
-  const addEIP191Prefix = useCallback((hash: `0x${string}`): `0x${string}` => {
-    const prefix = "\x19Ethereum Signed Message:\n32";
-    const prefixBytes = toBytes(prefix);
-    const hashBytes = hexToBytes(hash);
-    const combined = concat([prefixBytes, hashBytes]);
-    return keccak256(combined);
-  }, []);
-
-  /**
-   * Get the session key wallet client for signing delegated transactions
-   */
-  const getSessionKeyWallet = useCallback((): ReturnType<typeof createSessionKeyWalletClient> | null => {
-    const sessionKeyData = getStoredSessionKey();
-    if (!sessionKeyData) {
-      addTerminalLine("❌ No session key found. Please authorize a delegation session first.", "error");
-      return null;
-    }
-    return createSessionKeyWalletClient(sessionKeyData);
-  }, [getStoredSessionKey, addTerminalLine]);
 
   /**
    * Ensure Smart Account is ready for transactions
@@ -127,16 +73,11 @@ export const useContract = () => {
   }, [addTerminalLine]);
 
   /**
-   * Create channel using Smart Account (NO MetaMask popup)
+   * Create channel using Smart Account
    */
   const createChannel = useCallback(async (channelName: string): Promise<Hash | null> => {
     if (!user || !user.smartAccountAddress) {
       addTerminalLine("❌ Please connect Smart Account first", "error");
-      return null;
-    }
-
-    if (!isDelegationActive) {
-      addTerminalLine("❌ Please authorize delegation session first", "error");
       return null;
     }
 
@@ -157,53 +98,13 @@ export const useContract = () => {
         return null;
       }
 
-      const publicClient = createMonadPublicClient();
-
-      // Get nonce from contract
-      const nonce = await getNonce(publicClient, user.smartAccountAddress as Address);
-      const timestamp = BigInt(Math.floor(Date.now() / 1000));
-
-      // Calculate channelId exactly as contract does: keccak256(abi.encodePacked(channelName))
-      const channelId = keccak256(toHex(channelName));
-
-      // Create payload exactly as contract does:
-      // abi.encode("CREATE_CHANNEL", channelId, nonce, timestamp, smartAccount)
-      const payload = encodeAbiParameters(
-        parseAbiParameters("string, bytes32, uint256, uint256, address"),
-        ["CREATE_CHANNEL", channelId, nonce, timestamp, user.smartAccountAddress as Address]
-      );
-
-      // Create domain-bound digest
-      const digest = createDomainHash(payload);
-
-      // Add EIP-191 prefix (matching toEthSignedMessageHash)
-      const ethSignedHash = addEIP191Prefix(digest);
-
-      // Get session key wallet for signing
-      const sessionWallet = getSessionKeyWallet();
-      if (!sessionWallet || !sessionWallet.account) {
-        addTerminalLine("❌ Failed to get session key wallet", "error");
-        return null;
-      }
-
-      const account = sessionWallet.account;
-      if (!account.sign) {
-        addTerminalLine("❌ Session wallet account cannot sign", "error");
-        return null;
-      }
-
-      // Sign the hash directly (don't use signMessage as it adds prefix again)
-      const signature = await account.sign({
-        hash: ethSignedHash,
-      });
-
-      addTerminalLine("Creating channel on-chain (no MetaMask popup)...", "info");
+      addTerminalLine("Creating channel on-chain...", "info");
 
       // Prepare transaction data
       const data = encodeFunctionData({
         abi: MONAD_IRC_ABI,
-        functionName: "createChannelSigned",
-        args: [channelName, nonce, timestamp, user.smartAccountAddress as Address, signature],
+        functionName: "createChannel",
+        args: [channelName],
       });
 
       // Send transaction via Smart Account bundler client
@@ -239,21 +140,8 @@ export const useContract = () => {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       addTerminalLine(`❌ Channel creation failed: ${errorMessage}`, "error");
       
-      // Check for session-related errors (0xbd791d1f = SessionInvalidOrExpired)
-      if (errorMessage.includes("0xbd791d1f") || 
-          errorMessage.includes("SessionInvalidOrExpired") ||
-          errorMessage.includes("session")) {
-        addTerminalLine("", "error");
-        addTerminalLine("⚠️  No active delegation session found!", "error");
-        addTerminalLine("", "info");
-        addTerminalLine("💡 You must authorize a session key first:", "info");
-        addTerminalLine("   1. Run: authorize session", "info");
-        addTerminalLine("   2. Confirm in MetaMask", "info");
-        addTerminalLine("   3. Wait for confirmation", "info");
-        addTerminalLine("   4. Then try creating the channel again", "info");
-      }
       // Check for various funding-related errors
-      else if (errorMessage.includes("insufficient funds") || 
+      if (errorMessage.includes("insufficient funds") || 
           errorMessage.includes("AA21") || 
           errorMessage.includes("didn't pay prefund") ||
           errorMessage.includes("does not have sufficient funds")) {
@@ -275,10 +163,10 @@ export const useContract = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [user, isDelegationActive, getSessionKeyWallet, createDomainHash, addEIP191Prefix, addTerminalLine, ensureSmartAccountReady]);
+  }, [user, addTerminalLine, ensureSmartAccountReady]);
 
   /**
-   * Send message using Smart Account (NO MetaMask popup)
+   * Send message using Smart Account
    */
   const sendMessage = useCallback(async (
     content: string,
@@ -286,11 +174,6 @@ export const useContract = () => {
   ): Promise<Hash | null> => {
     if (!user || !user.smartAccountAddress) {
       addTerminalLine("❌ User or Smart Account not found", "error");
-      return null;
-    }
-
-    if (!isDelegationActive) {
-      addTerminalLine("❌ Please authorize delegation session first", "error");
       return null;
     }
 
@@ -311,56 +194,16 @@ export const useContract = () => {
         return null;
       }
 
-      const publicClient = createMonadPublicClient();
-
-      // Get nonce from contract
-      const nonce = await getNonce(publicClient, user.smartAccountAddress as Address);
-      const timestamp = BigInt(Math.floor(Date.now() / 1000));
-
       // Create message hash (hash of content)
       const msgHash = keccak256(toHex(content));
 
-      // Calculate channelId exactly as contract does
-      const channelId = keccak256(toHex(channelName));
-
-      // Create payload exactly as contract does:
-      // abi.encode("SEND_MESSAGE", msgHash, channelId, nonce, timestamp, smartAccount)
-      const payload = encodeAbiParameters(
-        parseAbiParameters("string, bytes32, bytes32, uint256, uint256, address"),
-        ["SEND_MESSAGE", msgHash, channelId, nonce, timestamp, user.smartAccountAddress as Address]
-      );
-
-      // Create domain-bound digest
-      const digest = createDomainHash(payload);
-
-      // Add EIP-191 prefix
-      const ethSignedHash = addEIP191Prefix(digest);
-
-      // Get session key wallet for signing
-      const sessionWallet = getSessionKeyWallet();
-      if (!sessionWallet || !sessionWallet.account) {
-        addTerminalLine("❌ Failed to get session key wallet", "error");
-        return null;
-      }
-
-      const account = sessionWallet.account;
-      if (!account || !account.sign) {
-        addTerminalLine("❌ Session wallet account cannot sign", "error");
-        return null;
-      }
-
-      // Sign the hash directly
-      const signature = await account.sign({
-        hash: ethSignedHash,
-      });
-
-      addTerminalLine("Sending message on-chain (no MetaMask popup)...", "info");
+      addTerminalLine("Sending message on-chain...", "info");
 
       // Prepare transaction data
       const data = encodeFunctionData({
         abi: MONAD_IRC_ABI,
-        functionName: "sendMessageSigned",
-        args: [msgHash, channelId, nonce, timestamp, user.smartAccountAddress as Address, signature],
+        functionName: "sendMessage",
+        args: [msgHash, channelName],
       });
 
       // Send transaction via Smart Account bundler client
@@ -395,21 +238,8 @@ export const useContract = () => {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       addTerminalLine(`❌ Message send failed: ${errorMessage}`, "error");
       
-      // Check for session-related errors (0xbd791d1f = SessionInvalidOrExpired)
-      if (errorMessage.includes("0xbd791d1f") || 
-          errorMessage.includes("SessionInvalidOrExpired") ||
-          errorMessage.includes("session")) {
-        addTerminalLine("", "error");
-        addTerminalLine("⚠️  No active delegation session found!", "error");
-        addTerminalLine("", "info");
-        addTerminalLine("💡 You must authorize a session key first:", "info");
-        addTerminalLine("   1. Run: authorize session", "info");
-        addTerminalLine("   2. Confirm in MetaMask", "info");
-        addTerminalLine("   3. Wait for confirmation", "info");
-        addTerminalLine("   4. Then try sending the message again", "info");
-      }
       // Check for various funding-related errors
-      else if (errorMessage.includes("insufficient funds") || 
+      if (errorMessage.includes("insufficient funds") || 
           errorMessage.includes("AA21") || 
           errorMessage.includes("didn't pay prefund") ||
           errorMessage.includes("does not have sufficient funds")) {
@@ -431,7 +261,7 @@ export const useContract = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [user, isDelegationActive, getSessionKeyWallet, createDomainHash, addEIP191Prefix, addTerminalLine, ensureSmartAccountReady]);
+  }, [user, addTerminalLine, ensureSmartAccountReady]);
 
   /**
    * Check Smart Account balance
@@ -465,34 +295,6 @@ export const useContract = () => {
       return null;
     }
   }, [user, addTerminalLine]);
-
-  /**
-   * Check session key wallet balance (for informational purposes)
-   */
-  const checkSessionKeyBalance = useCallback(async () => {
-    const sessionKeyData = getStoredSessionKey();
-    if (!sessionKeyData) {
-      addTerminalLine("❌ No session key found", "error");
-      return null;
-    }
-
-    try {
-      const publicClient = createMonadPublicClient();
-      const balance = await publicClient.getBalance({
-        address: sessionKeyData.address,
-      });
-      
-      const balanceInEth = Number(balance) / 1e18;
-      addTerminalLine(`Session key balance: ${balanceInEth.toFixed(6)} MON`, "info");
-      addTerminalLine("Note: Transactions are sent via Smart Account, not session key.", "info");
-      
-      return balance;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      addTerminalLine(`❌ Failed to check balance: ${errorMessage}`, "error");
-      return null;
-    }
-  }, [getStoredSessionKey, addTerminalLine]);
 
   /**
    * Fund Smart Account (helper for users)
@@ -555,7 +357,6 @@ export const useContract = () => {
     createChannel,
     sendMessage,
     checkSmartAccountBalance,
-    checkSessionKeyBalance,
     fundSmartAccount,
     isLoading,
   };

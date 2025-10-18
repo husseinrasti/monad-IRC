@@ -16,10 +16,9 @@ export const createOrGetUser = mutation({
     _creationTime: v.number(),
     walletAddress: v.string(),
     username: v.string(),
-    smartAccountAddress: v.string(),
+    smartAccountAddress: v.optional(v.string()),
     verificationSignature: v.optional(v.string()),
     lastConnected: v.optional(v.number()),
-    activeSessionId: v.optional(v.id("sessions")),
   }),
   handler: async (ctx, args) => {
     // Check if user already exists
@@ -83,7 +82,6 @@ export const getUserByWallet = query({
       smartAccountAddress: v.optional(v.string()),
       verificationSignature: v.optional(v.string()),
       lastConnected: v.optional(v.number()),
-      activeSessionId: v.optional(v.id("sessions")),
     }),
     v.null()
   ),
@@ -110,10 +108,9 @@ export const getUserByUsername = query({
       _creationTime: v.number(),
       walletAddress: v.string(),
       username: v.string(),
-      smartAccountAddress: v.string(),
+      smartAccountAddress: v.optional(v.string()),
       verificationSignature: v.optional(v.string()),
       lastConnected: v.optional(v.number()),
-      activeSessionId: v.optional(v.id("sessions")),
     }),
     v.null()
   ),
@@ -124,81 +121,6 @@ export const getUserByUsername = query({
       .first();
 
     return user || null;
-  },
-});
-
-/**
- * Get user with active session
- */
-export const getUserWithSession = query({
-  args: {
-    walletAddress: v.string(),
-  },
-  returns: v.union(
-    v.object({
-      user: v.object({
-        _id: v.id("users"),
-        _creationTime: v.number(),
-        walletAddress: v.string(),
-        username: v.string(),
-        smartAccountAddress: v.string(),
-        verificationSignature: v.optional(v.string()),
-        lastConnected: v.optional(v.number()),
-        activeSessionId: v.optional(v.id("sessions")),
-      }),
-      activeSession: v.union(
-        v.object({
-          _id: v.id("sessions"),
-          _creationTime: v.number(),
-          smartAccount: v.string(),
-          sessionKey: v.string(),
-          expiry: v.string(),
-          isAuthorized: v.boolean(),
-          userId: v.id("users"),
-          isActive: v.boolean(),
-          lastUsed: v.optional(v.number()),
-        }),
-        v.null()
-      ),
-    }),
-    v.null()
-  ),
-  handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_wallet", (q) => q.eq("walletAddress", args.walletAddress))
-      .first();
-
-    if (!user) {
-      return null;
-    }
-
-    let activeSession = null;
-    if (user.activeSessionId) {
-      activeSession = await ctx.db.get(user.activeSessionId);
-    }
-
-    return {
-      user,
-      activeSession,
-    };
-  },
-});
-
-/**
- * Update user's active session
- */
-export const updateActiveSession = mutation({
-  args: {
-    userId: v.id("users"),
-    sessionId: v.union(v.id("sessions"), v.null()),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.userId, {
-      activeSessionId: args.sessionId || undefined,
-    });
-    return null;
   },
 });
 
@@ -308,4 +230,3 @@ export const resetUsername = mutation({
     };
   },
 });
-
