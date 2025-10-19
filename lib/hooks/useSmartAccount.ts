@@ -100,7 +100,6 @@ export const useSmartAccount = () => {
     verificationSignature: string
   ) => {
     try {
-      addTerminalLine("Checking database for existing user...", "info");
       
       // Use smart account address as username by default
       const username = smartAccountAddress;
@@ -128,9 +127,6 @@ export const useSmartAccount = () => {
       };
 
       setUser(newUser);
-
-      addTerminalLine("User profile loaded successfully!", "system");
-      addTerminalLine("Use 'authorize session' to enable gasless transactions.", "info");
 
       return newUser;
     } catch (error) {
@@ -220,7 +216,6 @@ export const useSmartAccount = () => {
     }
 
     setWalletMonitoring(true);
-    addTerminalLine("Wallet monitoring enabled.", "system");
   }, [isWalletMonitoring, handleAccountsChanged, handleChainChanged, setWalletMonitoring, setUser, setConnected, setDelegationSession, setDelegationActive, addTerminalLine]);
 
   /**
@@ -253,8 +248,6 @@ export const useSmartAccount = () => {
     try {
       // Check if MetaMask is installed
       if (!isMetaMaskInstalled()) {
-        addTerminalLine("❌ MetaMask not detected!", "error");
-        addTerminalLine("This application requires MetaMask.", "error");
         addTerminalLine("Please install MetaMask from https://metamask.io", "info");
         setIsConnecting(false);
         return;
@@ -262,7 +255,6 @@ export const useSmartAccount = () => {
 
       // Verify it's actually MetaMask (not another wallet)
       if (!(window.ethereum as any).isMetaMask) {
-        addTerminalLine("❌ MetaMask is required!", "error");
         addTerminalLine("Please make sure MetaMask is your active wallet.", "error");
         setIsConnecting(false);
         return;
@@ -281,7 +273,6 @@ export const useSmartAccount = () => {
       const smartAccountData = await initializeSmartAccount();
       
       if (!smartAccountData) {
-        addTerminalLine("❌ Failed to initialize Smart Account.", "error");
         addTerminalLine("Please check your MetaMask connection and try again.", "info");
         setIsConnecting(false);
         return;
@@ -300,7 +291,6 @@ export const useSmartAccount = () => {
       const isDeployed = await isSmartAccountDeployed(publicClient, smartAccountAddress);
       
       if (!isDeployed) {
-        addTerminalLine("ℹ️  Smart Account not deployed yet.", "info");
         addTerminalLine("It will be deployed automatically with your first transaction.", "info");
       } else {
         addTerminalLine("✅ Smart Account already deployed!", "system");
@@ -327,7 +317,6 @@ export const useSmartAccount = () => {
       
       if (newUser) {
         setConnected(true);
-        addTerminalLine("✅ Smart Account connected successfully!", "system");
         
         // Setup wallet monitoring
         setupWalletMonitoring();
@@ -341,7 +330,6 @@ export const useSmartAccount = () => {
       if (errorMessage.includes("User rejected") || errorMessage.includes("User denied")) {
         addTerminalLine("❌ Connection cancelled by user.", "warning");
       } else if (errorMessage.includes("MetaMask")) {
-        addTerminalLine(`❌ MetaMask error: ${errorMessage}`, "error");
         addTerminalLine("Please ensure MetaMask is properly installed and unlocked.", "info");
       } else {
         addTerminalLine(`❌ Connection failed: ${errorMessage}`, "error");

@@ -64,13 +64,29 @@ if ! npm list concurrently &> /dev/null; then
     echo ""
 fi
 
+# Check if envio directory exists
+if [ ! -d "envio" ]; then
+    echo -e "${RED}❌ envio directory not found${NC}"
+    exit 1
+fi
+
+# Check if envio node_modules exists
+if [ ! -d "envio/node_modules" ]; then
+    echo -e "${YELLOW}📦 Installing envio dependencies...${NC}"
+    cd envio && pnpm install && cd ..
+    echo -e "${GREEN}✓ envio dependencies installed${NC}"
+    echo ""
+fi
+
 # Start services
-echo -e "${GREEN}Starting services...${NC}"
+echo -e "${GREEN}Starting all services...${NC}"
 echo "- Frontend: ${BLUE}http://localhost:3000${NC}"
+echo "- HyperIndex GraphQL: ${BLUE}http://localhost:8080/graphql${NC}"
+echo "- HyperIndex UI: ${BLUE}http://localhost:8080${NC}"
 echo "- Convex Dashboard: ${BLUE}https://dashboard.convex.dev${NC}"
 echo ""
 echo -e "${YELLOW}Press Ctrl+C to stop all services${NC}"
 echo ""
 
-# Use npm run dev:all which uses concurrently
+# Use npm run dev:all which uses concurrently to run all 3 services
 npm run dev:all

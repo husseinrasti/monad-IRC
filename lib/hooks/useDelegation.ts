@@ -65,7 +65,6 @@ export const useDelegation = () => {
   const authorizeDelegation = useCallback(async () => {
     // Validate MetaMask is installed
     if (!isMetaMaskInstalled()) {
-      addTerminalLine("MetaMask is required to authorize a delegation session.", "error");
       addTerminalLine("Please install MetaMask from https://metamask.io", "info");
       return false;
     }
@@ -104,16 +103,12 @@ export const useDelegation = () => {
       
       setDelegationSession(newSession);
       setDelegationActive(true);
-
-      addTerminalLine("Delegation session created successfully!", "system");
-      addTerminalLine("Note: With Account Abstraction, session is managed by MetaMask SDK.", "info");
       
       return true;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       
       if (errorMessage.includes("MetaMask")) {
-        addTerminalLine(`MetaMask error: ${errorMessage}`, "error");
         addTerminalLine("Please ensure MetaMask is installed and unlocked.", "info");
       } else {
         addTerminalLine(`Failed to authorize delegation session: ${errorMessage}`, "error");

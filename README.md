@@ -5,19 +5,22 @@ A decentralized, retro-style IRC (Internet Relay Chat) client built entirely on 
 ## Features
 
 - 🎨 **Retro Terminal UI** - Old-school CRT-style interface with scanline effects
-- 🔐 **Smart Account Integration** - MetaMask Delegation Toolkit for session-based auth
-- ⚡ **Gasless Transactions** - Session keys enable signing without constant MetaMask popups
+- 🔐 **Smart Account Integration** - MetaMask Delegation Toolkit for ERC-4337 Account Abstraction
+- ⚡ **Gasless UX** - No MetaMask popups! Transactions via Pimlico bundler
 - 💬 **Real-time Chat** - On-chain messages indexed by Envio HyperIndex
 - 🌐 **Multi-channel Support** - Create and join multiple chat channels
+- 🔄 **Auto-Retry** - Exponential backoff for network resilience
+- 📊 **Live Updates** - Real-time UI updates via Convex subscriptions
 
 ## Tech Stack
 
 - **Frontend**: Next.js 14, TypeScript, Tailwind CSS
-- **Wallet**: MetaMask Delegation Toolkit
+- **Account Abstraction**: MetaMask Delegation Toolkit (ERC-4337)
+- **Bundler**: Pimlico (for UserOperations)
 - **Blockchain**: Monad Testnet (Solidity smart contracts)
-- **Indexer**: Envio HyperIndex
-- **Backend**: Convex (Serverless)
-- **Real-time**: Convex Reactive Queries
+- **Indexer**: Envio HyperIndex (Event indexing)
+- **Backend**: Convex (Real-time database)
+- **Real-time**: Convex Reactive Queries + WebSockets
 
 ## Project Structure
 
@@ -131,18 +134,26 @@ Copy the deployed contract address to your `.env.local` file.
 #### 5. Start the Application
 
 ```bash
-# Option A: Start both together
+# Option A: Start all services together (Convex + HyperIndex + Frontend)
 npm run dev:all
 
-# Option B: Start separately
+# Option B: Start separately (recommended for debugging)
 # Terminal 1: Convex
 npm run convex:dev
 
-# Terminal 2: Next.js
+# Terminal 2: HyperIndex
+cd envio && pnpm dev
+
+# Terminal 3: Next.js
 npm run dev
 ```
 
 Open http://localhost:3000 🎉
+
+Services available:
+- Frontend: http://localhost:3000
+- HyperIndex GraphQL: http://localhost:8080/graphql
+- HyperIndex UI: http://localhost:8080
 
 ## ⚠️ Important: Smart Account Funding
 
@@ -193,11 +204,13 @@ Without funding, you'll get an error: `AA21 didn't pay prefund`
 
 The `MonadIRC.sol` contract implements:
 
-- **Session Authorization**: Smart accounts can authorize session keys with expiry
-- **Channel Management**: Create channels on-chain
-- **Signed Messages**: Send messages using session key signatures
-- **Replay Protection**: Nonce-based replay attack prevention
+- **Channel Management**: Create channels on-chain with duplicate prevention
+- **Message Sending**: Send messages with content hash for verification
 - **Event Emission**: All actions emit events for off-chain indexing
+- **Simple Access Control**: Anyone can create channels and send messages
+- **Gas Optimization**: Message content stored off-chain (only hash on-chain)
+
+**Note**: No session keys stored in contract. Authentication handled by MetaMask Delegation SDK + Smart Accounts.
 
 ## Development
 
@@ -214,19 +227,25 @@ npm test
 
 ### Convex Database Schema
 
-- **users**: User accounts linked to wallet addresses
-- **sessions**: Session key authorization records  
+- **users**: User accounts with wallet and Smart Account addresses
 - **channels**: Chat channel registry
-- **messages**: Message history with on-chain verification
+- **messages**: Message history with on-chain verification and status tracking
 
 All data is automatically synced in real-time with Convex's reactive queries.
 
+**Data Flow**:
+1. User action → Smart Account → Bundler → Contract
+2. Contract emits event → HyperIndex indexes
+3. HyperIndex calls Convex webhook
+4. Convex stores data → Frontend updates automatically
+
 ## Security Considerations
 
-- Session keys are stored in browser memory (not persisted)
-- All messages are signed and verified on-chain
-- Session keys have expiry timestamps
-- Nonce-based replay protection
+- Smart Accounts controlled by EOA owner via MetaMask signatures
+- All transactions signed by Smart Account (no session keys in contract)
+- Message content hashed for integrity verification
+- Webhook payloads validated before processing
+- Environment variables for sensitive data (API keys, etc.)
 
 ## Future Enhancements
 
@@ -255,7 +274,16 @@ MIT License - see LICENSE file for details
 
 ## 📚 Documentation
 
+**Complete documentation for MonadIRC:**
+
+### Essential Guides
+- **[SETUP_GUIDE.md](./SETUP_GUIDE.md)** - Complete setup instructions
+
+### Configuration & Reference
 - **[QUICK_START.md](./QUICK_START.md)** - Get started in 5 minutes
+
+### For Contributors
+- **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Contribution guidelines
 
 ## Support
 

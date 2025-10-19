@@ -17,6 +17,11 @@ import {
   isMetaMaskInstalled,
 } from "@/lib/utils/smartAccount";
 import { getGlobalSmartAccount, getGlobalBundlerClient } from "./useSmartAccount";
+import {
+  executeUserOperation,
+  formatBundlerError,
+  type RetryConfig,
+} from "@/lib/utils/bundlerHelpers";
 
 /**
  * Hook for interacting with the MonadIRC smart contract
@@ -48,12 +53,7 @@ export const useContract = () => {
 
     // Check if bundler is available
     if (!bundlerClient) {
-      addTerminalLine("❌ Bundler client not available.", "error");
-      addTerminalLine("⚠️  Monad testnet doesn't have ERC-4337 bundler support yet.", "warning");
-      addTerminalLine("💡 You need to either:", "info");
-      addTerminalLine("  1. Set up your own bundler service", "info");
-      addTerminalLine("  2. Use a public bundler that supports Monad", "info");
-      addTerminalLine("  3. Set NEXT_PUBLIC_BUNDLER_URL in your environment", "info");
+      addTerminalLine("❌ Bundler client not available.", "error"); 
       return false;
     }
 
@@ -107,55 +107,60 @@ export const useContract = () => {
         args: [channelName],
       });
 
-      // Send transaction via Smart Account bundler client
-      const userOpHash = await bundlerClient.sendUserOperation({
-        account: smartAccount,
-        calls: [
+      // Retry configuration
+      const retryConfig: RetryConfig = {
+        maxAttempts: 3,
+        initialDelay: 2000,
+        maxDelay: 10000,
+        backoffMultiplier: 2,
+      };
+
+      // Execute user operation with retry logic
+      const result = await executeUserOperation(
+        bundlerClient,
+        smartAccount,
+        [
           {
             to: CONTRACT_ADDRESS,
             data,
             value: BigInt(0),
           },
         ],
-        maxFeePerGas: BigInt(200000000000), // 200 Gwei
-        maxPriorityFeePerGas: BigInt(200000000000), // 200 Gwei
-      });
+        {
+          maxFeePerGas: BigInt(200000000000), // 200 Gwei
+          maxPriorityFeePerGas: BigInt(200000000000),
+          timeout: 60000, // 60 seconds
+          retryConfig,
+          onLog: (message: string) => {
+            addTerminalLine(message, "system");
+          },
+        }
+      );
 
-      addTerminalLine(`User operation hash: ${userOpHash}`, "system");
-      addTerminalLine("Waiting for confirmation...", "info");
-
-      // Wait for user operation to be included
-      const receipt = await bundlerClient.waitForUserOperationReceipt({
-        hash: userOpHash,
-      });
-      
-      if (receipt.success) {
+      if (result.success) {
         addTerminalLine("✅ Channel created on-chain!", "system");
-        return receipt.receipt.transactionHash as Hash;
+        return result.transactionHash;
       } else {
-        addTerminalLine("❌ Transaction failed on-chain", "error");
+        addTerminalLine(`❌ Transaction failed: ${result.error}`, "error");
         return null;
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      addTerminalLine(`❌ Channel creation failed: ${errorMessage}`, "error");
+      const { message, suggestions } = formatBundlerError(error);
       
-      // Check for various funding-related errors
-      if (errorMessage.includes("insufficient funds") || 
-          errorMessage.includes("AA21") || 
-          errorMessage.includes("didn't pay prefund") ||
-          errorMessage.includes("does not have sufficient funds")) {
-        addTerminalLine("", "error");
-        addTerminalLine("⚠️  Your Smart Account needs MON tokens to pay for gas!", "error");
-        addTerminalLine(`Smart Account Address: ${user.smartAccountAddress}`, "info");
+      addTerminalLine(`❌ Channel creation failed: ${message}`, "error");
+      
+      // Display helpful suggestions
+      if (suggestions.length > 0) {
         addTerminalLine("", "info");
-        addTerminalLine("💡 To fund your Smart Account, run:", "info");
-        addTerminalLine("   fund <amount>", "info");
-        addTerminalLine("   Example: fund 0.1", "info");
-        addTerminalLine("", "info");
-        addTerminalLine("Or send MON directly from MetaMask to your Smart Account address.", "info");
-      } else if (errorMessage.includes("MetaMask")) {
-        addTerminalLine("Please ensure MetaMask is installed and unlocked.", "info");
+        suggestions.forEach(suggestion => {
+          addTerminalLine(`💡 ${suggestion}`, "info");
+        });
+        
+        // Add Smart Account address if it's a funding issue
+        if (message.includes("insufficient funds") || message.includes("AA21")) {
+          addTerminalLine("", "info");
+          addTerminalLine(`Smart Account: ${user.smartAccountAddress}`, "info");
+        }
       }
       
       console.error("Full error details:", error);
@@ -206,54 +211,60 @@ export const useContract = () => {
         args: [msgHash, channelName],
       });
 
-      // Send transaction via Smart Account bundler client
-      const userOpHash = await bundlerClient.sendUserOperation({
-        account: smartAccount,
-        calls: [
+      // Retry configuration
+      const retryConfig: RetryConfig = {
+        maxAttempts: 3,
+        initialDelay: 2000,
+        maxDelay: 10000,
+        backoffMultiplier: 2,
+      };
+
+      // Execute user operation with retry logic
+      const result = await executeUserOperation(
+        bundlerClient,
+        smartAccount,
+        [
           {
             to: CONTRACT_ADDRESS,
             data,
             value: BigInt(0),
           },
         ],
-        maxFeePerGas: BigInt(200000000000), // 200 Gwei
-        maxPriorityFeePerGas: BigInt(200000000000), // 200 Gwei
-      });
+        {
+          maxFeePerGas: BigInt(200000000000), // 200 Gwei
+          maxPriorityFeePerGas: BigInt(200000000000),
+          timeout: 60000, // 60 seconds
+          retryConfig,
+          onLog: (message: string) => {
+            addTerminalLine(message, "system");
+          },
+        }
+      );
 
-      addTerminalLine(`User operation hash: ${userOpHash}`, "system");
-
-      // Wait for user operation to be included
-      const receipt = await bundlerClient.waitForUserOperationReceipt({
-        hash: userOpHash,
-      });
-      
-      if (receipt.success) {
+      if (result.success) {
         addTerminalLine("✅ Message confirmed on-chain!", "system");
-        return receipt.receipt.transactionHash as Hash;
+        return result.transactionHash;
       } else {
-        addTerminalLine("❌ Transaction failed on-chain", "error");
+        addTerminalLine(`❌ Transaction failed: ${result.error}`, "error");
         return null;
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      addTerminalLine(`❌ Message send failed: ${errorMessage}`, "error");
+      const { message, suggestions } = formatBundlerError(error);
       
-      // Check for various funding-related errors
-      if (errorMessage.includes("insufficient funds") || 
-          errorMessage.includes("AA21") || 
-          errorMessage.includes("didn't pay prefund") ||
-          errorMessage.includes("does not have sufficient funds")) {
-        addTerminalLine("", "error");
-        addTerminalLine("⚠️  Your Smart Account needs MON tokens to pay for gas!", "error");
-        addTerminalLine(`Smart Account Address: ${user.smartAccountAddress}`, "info");
+      addTerminalLine(`❌ Message send failed: ${message}`, "error");
+      
+      // Display helpful suggestions
+      if (suggestions.length > 0) {
         addTerminalLine("", "info");
-        addTerminalLine("💡 To fund your Smart Account, run:", "info");
-        addTerminalLine("   fund <amount>", "info");
-        addTerminalLine("   Example: fund 0.1", "info");
-        addTerminalLine("", "info");
-        addTerminalLine("Or send MON directly from MetaMask to your Smart Account address.", "info");
-      } else if (errorMessage.includes("MetaMask")) {
-        addTerminalLine("Please ensure MetaMask is installed and unlocked.", "info");
+        suggestions.forEach(suggestion => {
+          addTerminalLine(`💡 ${suggestion}`, "info");
+        });
+        
+        // Add Smart Account address if it's a funding issue
+        if (message.includes("insufficient funds") || message.includes("AA21")) {
+          addTerminalLine("", "info");
+          addTerminalLine(`Smart Account: ${user.smartAccountAddress}`, "info");
+        }
       }
       
       console.error("Full error:", error);
@@ -280,7 +291,6 @@ export const useContract = () => {
       
       const balanceInMon = Number(balance) / 1e18;
       addTerminalLine(`💰 Smart Account Balance: ${balanceInMon.toFixed(6)} MON`, "system");
-      addTerminalLine(`   Address: ${user.smartAccountAddress}`, "info");
       
       if (balanceInMon < 0.001) {
         addTerminalLine("", "warning");

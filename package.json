@@ -9,7 +9,8 @@
     "lint": "next lint",
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy",
-    "dev:all": "concurrently \"npm run dev\" \"npm run convex:dev\""
+    "envio:dev": "cd envio && pnpm dev",
+    "dev:all": "concurrently \"npm run dev\" \"npm run convex:dev\" \"npm run envio:dev\""
   },
   "dependencies": {
     "@apollo/client": "^3.11.8",
