@@ -104,6 +104,9 @@ export async function sendUserOperationWithRetry(
   options: {
     maxFeePerGas?: bigint;
     maxPriorityFeePerGas?: bigint;
+    callGasLimit?: bigint;
+    verificationGasLimit?: bigint;
+    preVerificationGas?: bigint;
     retryConfig?: RetryConfig;
     onLog?: (message: string) => void;
   } = {}
@@ -111,6 +114,9 @@ export async function sendUserOperationWithRetry(
   const {
     maxFeePerGas = BigInt(200000000000), // 200 Gwei default
     maxPriorityFeePerGas = BigInt(200000000000),
+    callGasLimit = BigInt(200000), // Explicit gas limit for the call
+    verificationGasLimit = BigInt(500000), // For Smart Account verification (deployment if needed)
+    preVerificationGas = BigInt(500000), // Pre-verification gas (increased for Smart Account deployment)
     retryConfig,
     onLog,
   } = options;
@@ -122,6 +128,9 @@ export async function sendUserOperationWithRetry(
         calls,
         maxFeePerGas,
         maxPriorityFeePerGas,
+        callGasLimit,
+        verificationGasLimit,
+        preVerificationGas,
       });
 
       if (onLog) {
@@ -200,6 +209,9 @@ export async function executeUserOperation(
   options: {
     maxFeePerGas?: bigint;
     maxPriorityFeePerGas?: bigint;
+    callGasLimit?: bigint;
+    verificationGasLimit?: bigint;
+    preVerificationGas?: bigint;
     timeout?: number;
     retryConfig?: RetryConfig;
     onLog?: (message: string) => void;
@@ -210,7 +222,16 @@ export async function executeUserOperation(
   userOpHash: Hash;
   error?: string;
 }> {
-  const { onLog, retryConfig, timeout, maxFeePerGas, maxPriorityFeePerGas } = options;
+  const { 
+    onLog, 
+    retryConfig, 
+    timeout, 
+    maxFeePerGas, 
+    maxPriorityFeePerGas,
+    callGasLimit,
+    verificationGasLimit,
+    preVerificationGas,
+  } = options;
 
   try {
     // Step 1: Send user operation
@@ -225,6 +246,9 @@ export async function executeUserOperation(
       {
         maxFeePerGas,
         maxPriorityFeePerGas,
+        callGasLimit,
+        verificationGasLimit,
+        preVerificationGas,
         retryConfig,
         onLog,
       }
@@ -327,11 +351,17 @@ export function formatBundlerError(error: unknown): {
   }
 
   // Gas estimation issues
-  if (errorMessage.includes("gas") || errorMessage.includes("estimation")) {
-    suggestions.push("Increase gas limits in transaction");
-    suggestions.push("Ensure contract function is callable");
-    suggestions.push("Check if Smart Account has enough balance");
-    isRetryable = true;
+  if (
+    errorMessage.includes("gas") || 
+    errorMessage.includes("estimation") ||
+    errorMessage.includes("binarySearchCallGas") ||
+    errorMessage.includes("simulateValidation")
+  ) {
+    suggestions.push("Check Smart Account has sufficient balance (run: /balance)");
+    suggestions.push("Fund Smart Account if balance is low (run: /fund 0.1)");
+    suggestions.push("Gas estimation is failing - trying with explicit gas limits");
+    suggestions.push("If this is your first transaction, Smart Account deployment requires more gas");
+    isRetryable = false; // Don't retry gas estimation failures
   }
 
   return {
