@@ -6,17 +6,18 @@ A decentralized, retro-style IRC (Internet Relay Chat) client built entirely on 
 
 - 🎨 **Retro Terminal UI** - Old-school CRT-style interface with scanline effects
 - 🔐 **Smart Account Integration** - MetaMask Delegation Toolkit for ERC-4337 Account Abstraction
-- ⚡ **Gasless UX** - No MetaMask popups! Transactions via Pimlico bundler
+- 🚀 **Alchemy Bundler** - ERC-4337 bundler for automatic gas estimation and transaction batching
+- ⚡ **Simple UX** - Direct signing via MetaMask SDK
 - 💬 **Real-time Chat** - On-chain messages indexed by Envio HyperIndex
 - 🌐 **Multi-channel Support** - Create and join multiple chat channels
-- 🔄 **Auto-Retry** - Exponential backoff for network resilience
 - 📊 **Live Updates** - Real-time UI updates via Convex subscriptions
+- 💰 **Optional Gasless Transactions** - Paymaster support for sponsored gas fees
 
 ## Tech Stack
 
 - **Frontend**: Next.js 14, TypeScript, Tailwind CSS
 - **Account Abstraction**: MetaMask Delegation Toolkit (ERC-4337)
-- **Bundler**: Pimlico (for UserOperations)
+- **Bundler**: Alchemy Account Abstraction Bundler
 - **Blockchain**: Monad Testnet (Solidity smart contracts)
 - **Indexer**: Envio HyperIndex (Event indexing)
 - **Backend**: Convex (Real-time database)
@@ -40,7 +41,6 @@ monad-irc/
 │   ├── users.ts          # User functions
 │   ├── channels.ts       # Channel functions
 │   ├── messages.ts       # Message functions
-│   ├── sessions.ts       # Session functions
 │   └── http.ts           # Webhook endpoints
 ├── contracts/             # Solidity smart contracts
 │   ├── src/
@@ -115,12 +115,17 @@ NEXT_PUBLIC_CONTRACT_ADDRESS=0xYourContractAddress
 NEXT_PUBLIC_MONAD_RPC_URL=https://testnet-rpc.monad.xyz
 NEXT_PUBLIC_MONAD_CHAIN_ID=10143
 
-# ERC-4337 Bundler URL (REQUIRED for account abstraction)
-# See BUNDLER_SETUP.md for configuration options
-NEXT_PUBLIC_BUNDLER_URL=https://your-bundler-url
+# Alchemy Account Abstraction Bundler (REQUIRED)
+# Get your API key from: https://dashboard.alchemy.com
+NEXT_PUBLIC_ALCHEMY_API_KEY=your_alchemy_api_key_here
+NEXT_PUBLIC_BUNDLER_URL=https://monad-testnet.g.alchemy.com/v2/your_alchemy_api_key_here
+
+# Optional: Paymaster for gasless transactions
+# NEXT_PUBLIC_PAYMASTER_URL=https://your-paymaster-url
+# NEXT_PUBLIC_PAYMASTER_POLICY_ID=your_policy_id
 ```
 
-**⚠️  Important**: Account abstraction features require a bundler service.
+**Important**: You need an Alchemy API key for bundler functionality. See [ALCHEMY_BUNDLER_SETUP.md](./ALCHEMY_BUNDLER_SETUP.md) for details.
 
 #### 4. Deploy Smart Contract
 
@@ -178,8 +183,7 @@ Without funding, you'll get an error: `AA21 didn't pay prefund`
 | Command | Description |
 |---------|-------------|
 | `help` | Show all available commands |
-| `connect wallet` | Connect MetaMask wallet |
-| `authorize session` | Authorize session key for gasless transactions |
+| `connect wallet` | Connect MetaMask Smart Account |
 | `balance` | Check Smart Account balance |
 | `fund <amount>` | Fund Smart Account with MON tokens |
 | `create #channelName` | Create a new channel |
@@ -187,18 +191,17 @@ Without funding, you'll get an error: `AA21 didn't pay prefund`
 | `leave` | Leave current channel |
 | `list channels` | List all available channels |
 | `clear` | Clear terminal screen |
-| `logout` | Disconnect wallet and end session |
+| `logout` | Disconnect wallet |
 
 ### Getting Started
 
 1. Open http://localhost:3000
-2. Run `connect wallet` to connect MetaMask
+2. Run `connect wallet` to connect MetaMask Smart Account
 3. Run `balance` to check your Smart Account balance
 4. Run `fund 0.1` to add MON tokens to your Smart Account (required for gas)
-5. Run `authorize session` to enable gasless messaging (one-time setup)
-6. Run `create #general` to create your first channel
-7. Run `join #general` to enter the channel
-8. Start chatting!
+5. Run `create #general` to create your first channel
+6. Run `join #general` to enter the channel
+7. Start chatting!
 
 ## Smart Contract Architecture
 
@@ -210,7 +213,7 @@ The `MonadIRC.sol` contract implements:
 - **Simple Access Control**: Anyone can create channels and send messages
 - **Gas Optimization**: Message content stored off-chain (only hash on-chain)
 
-**Note**: No session keys stored in contract. Authentication handled by MetaMask Delegation SDK + Smart Accounts.
+**Note**: All transactions signed directly via MetaMask Delegation Toolkit SDK.
 
 ## Development
 
@@ -234,15 +237,22 @@ npm test
 All data is automatically synced in real-time with Convex's reactive queries.
 
 **Data Flow**:
-1. User action → Smart Account → Bundler → Contract
+1. User action → MetaMask Smart Account → Alchemy Bundler (ERC-4337) → Contract
 2. Contract emits event → HyperIndex indexes
 3. HyperIndex calls Convex webhook
 4. Convex stores data → Frontend updates automatically
 
+**Alchemy Bundler Flow**:
+1. Smart Account prepares user operation
+2. Alchemy bundler estimates gas via `eth_estimateUserOperationGas`
+3. User operation submitted via `eth_sendUserOperation`
+4. Bundler executes and returns transaction hash
+5. Receipt fetched via `eth_getUserOperationReceipt`
+
 ## Security Considerations
 
-- Smart Accounts controlled by EOA owner via MetaMask signatures
-- All transactions signed by Smart Account (no session keys in contract)
+- Smart Accounts controlled by EOA owner via MetaMask
+- All transactions signed directly through MetaMask Delegation Toolkit
 - Message content hashed for integrity verification
 - Webhook payloads validated before processing
 - Environment variables for sensitive data (API keys, etc.)

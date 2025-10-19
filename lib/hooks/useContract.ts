@@ -7,279 +7,289 @@ import {
   type Hash, 
   encodeFunctionData, 
   keccak256, 
-  toHex, 
+  toHex,
 } from "viem";
 import { MONAD_IRC_ABI } from "@/lib/contract/abi";
 import { 
   CONTRACT_ADDRESS,
+  ALCHEMY_POLICY_ID,
   createMonadPublicClient,
-  ensureSmartAccountDeployed,
   isMetaMaskInstalled,
+  isSmartAccountDeployed,
 } from "@/lib/utils/smartAccount";
-import { getGlobalSmartAccount, getGlobalBundlerClient } from "./useSmartAccount";
-import {
-  executeUserOperation,
-  formatBundlerError,
-  type RetryConfig,
-} from "@/lib/utils/bundlerHelpers";
+import { 
+  getGlobalSmartAccount, 
+  getGlobalPublicClient,
+  getGlobalBundlerClient,
+  getGlobalPaymasterClient,
+} from "./useSmartAccount";
 
 /**
  * Hook for interacting with the MonadIRC smart contract
- * Uses MetaMask Smart Account with bundler client for all transactions
- * No more session keys or signatures - direct smart account calls
+ * 
+ * Architecture (following the example pattern):
+ * 1. Get Smart Account and clients from global storage
+ * 2. Encode function data using viem's encodeFunctionData
+ * 3. Create transaction calls array
+ * 4. Send user operation via bundlerClient.sendUserOperation
+ * 5. Wait for receipt via bundlerClient.waitForUserOperationReceipt
+ * 6. Optional: Use paymaster for gasless transactions
  */
 export const useContract = () => {
   const { addTerminalLine, user } = useIRC();
   const [isLoading, setIsLoading] = useState(false);
 
   /**
-   * Ensure Smart Account is ready for transactions
+   * Ensure Smart Account and Alchemy bundler are ready for transactions
    */
   const ensureSmartAccountReady = useCallback(async (): Promise<boolean> => {
     // Validate MetaMask
     if (!isMetaMaskInstalled()) {
-      addTerminalLine("❌ MetaMask is required for transactions.", "error");
+      addTerminalLine("MetaMask is required for transactions.", "error");
       return false;
     }
 
-    // Get Smart Account and bundler client
+    // Get Smart Account
     const smartAccount = getGlobalSmartAccount();
-    const bundlerClient = getGlobalBundlerClient();
 
     if (!smartAccount) {
-      addTerminalLine("❌ Smart Account not initialized. Please reconnect your wallet.", "error");
+      addTerminalLine("Smart Account not initialized. Please reconnect your wallet.", "error");
       return false;
     }
 
-    // Check if bundler is available
+    // Get bundler client
+    const bundlerClient = getGlobalBundlerClient();
+    
     if (!bundlerClient) {
-      addTerminalLine("❌ Bundler client not available.", "error"); 
+      addTerminalLine("Alchemy bundler not configured.", "error");
+      addTerminalLine("Set NEXT_PUBLIC_ALCHEMY_API_KEY in your .env.local file", "info");
       return false;
     }
 
-    // Ensure Smart Account is deployed
+    return true;
+  }, [addTerminalLine]);
+
+  /**
+   * Create channel transaction following the example pattern
+   * Pattern: createChannel(publicClient, channelName, smartAccount)
+   */
+  const createChannelWithSmartAccount = useCallback(async (
+    channelName: string
+  ): Promise<Hash | null> => {
+    const publicClient = getGlobalPublicClient();
+    const smartAccount = getGlobalSmartAccount();
+    const bundlerClient = getGlobalBundlerClient();
+    const paymasterClient = getGlobalPaymasterClient();
+
+    if (!publicClient || !smartAccount || !bundlerClient) {
+      addTerminalLine("Smart Account not initialized", "error");
+      return null;
+    }
+
     try {
-      const deployed = await ensureSmartAccountDeployed(smartAccount, bundlerClient);
-      if (!deployed) {
-        addTerminalLine("❌ Failed to deploy Smart Account.", "error");
-        return false;
-      }
-      return true;
+
+      // Encode transaction data
+      const createChannelTxData = [];
+      const createChannelTx = {
+        to: CONTRACT_ADDRESS,
+        data: encodeFunctionData({
+          abi: MONAD_IRC_ABI,
+          functionName: "createChannel",
+          args: [channelName],
+        }),
+      };
+      createChannelTxData.push(createChannelTx);
+
+      // Send user operation with optional paymaster
+      const userOpHash = await bundlerClient.sendUserOperation({
+        account: smartAccount,
+        calls: createChannelTxData,
+        ...(paymasterClient && ALCHEMY_POLICY_ID && {
+          paymaster: paymasterClient,
+          paymasterContext: {
+            policyId: ALCHEMY_POLICY_ID,
+          },
+        }),
+      });
+
+      addTerminalLine("Waiting for confirmation...", "info");
+
+      // Wait for user operation receipt
+      const createChannelReceipt = await bundlerClient.waitForUserOperationReceipt({
+        hash: userOpHash,
+      });
+
+      return createChannelReceipt.receipt.transactionHash;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      addTerminalLine(`❌ Smart Account deployment error: ${errorMessage}`, "error");
-      return false;
+      addTerminalLine(`Channel creation failed`, "error");
+      
+      // Provide helpful error messages
+      if (errorMessage.includes("insufficient funds") || errorMessage.includes("AA21")) {
+        addTerminalLine("Your Smart Account needs funds. Run 'fund <amount>' to add MON tokens.", "info");
+      } else if (errorMessage.includes("User denied") || errorMessage.includes("User rejected")) {
+        addTerminalLine("Please approve the transaction in MetaMask.", "info");
+      } else if (errorMessage.includes("AA23") || errorMessage.includes("reverted")) {
+        addTerminalLine("Transaction reverted. This channel might already exist.", "info");
+      }
+      
+      console.error("Full error:", error);
+      return null;
     }
   }, [addTerminalLine]);
 
   /**
    * Create channel using Smart Account
+   * Public interface wrapper for the transaction
    */
   const createChannel = useCallback(async (channelName: string): Promise<Hash | null> => {
     if (!user || !user.smartAccountAddress) {
-      addTerminalLine("❌ Please connect Smart Account first", "error");
+      addTerminalLine("Please connect Smart Account first", "error");
       return null;
     }
 
     setIsLoading(true);
     try {
-      // Ensure Smart Account is ready
       const isReady = await ensureSmartAccountReady();
       if (!isReady) {
         return null;
       }
 
-      // Get Smart Account and clients
-      const smartAccount = getGlobalSmartAccount();
-      const bundlerClient = getGlobalBundlerClient();
+      const txHash = await createChannelWithSmartAccount(channelName);
       
-      if (!smartAccount || !bundlerClient) {
-        addTerminalLine("❌ Smart Account not initialized.", "error");
-        return null;
+      if (txHash) {
+        addTerminalLine("Channel created on-chain!", "system");
+        addTerminalLine(`   Tx: ${txHash}`, "info");
+        return txHash;
       }
-
-      addTerminalLine("Creating channel on-chain...", "info");
-
-      // Prepare transaction data
-      const data = encodeFunctionData({
-        abi: MONAD_IRC_ABI,
-        functionName: "createChannel",
-        args: [channelName],
-      });
-
-      // Retry configuration
-      const retryConfig: RetryConfig = {
-        maxAttempts: 3,
-        initialDelay: 2000,
-        maxDelay: 10000,
-        backoffMultiplier: 2,
-      };
-
-      // Execute user operation with retry logic
-      const result = await executeUserOperation(
-        bundlerClient,
-        smartAccount,
-        [
-          {
-            to: CONTRACT_ADDRESS,
-            data,
-            value: BigInt(0),
-          },
-        ],
-        {
-          maxFeePerGas: BigInt(200000000000), // 200 Gwei
-          maxPriorityFeePerGas: BigInt(200000000000),
-          timeout: 60000, // 60 seconds
-          retryConfig,
-          onLog: (message: string) => {
-            addTerminalLine(message, "system");
-          },
-        }
-      );
-
-      if (result.success) {
-        addTerminalLine("✅ Channel created on-chain!", "system");
-        return result.transactionHash;
-      } else {
-        addTerminalLine(`❌ Transaction failed: ${result.error}`, "error");
-        return null;
-      }
+      
+      return null;
     } catch (error) {
-      const { message, suggestions } = formatBundlerError(error);
-      
-      addTerminalLine(`❌ Channel creation failed: ${message}`, "error");
-      
-      // Display helpful suggestions
-      if (suggestions.length > 0) {
-        addTerminalLine("", "info");
-        suggestions.forEach(suggestion => {
-          addTerminalLine(`💡 ${suggestion}`, "info");
-        });
-        
-        // Add Smart Account address if it's a funding issue
-        if (message.includes("insufficient funds") || message.includes("AA21")) {
-          addTerminalLine("", "info");
-          addTerminalLine(`Smart Account: ${user.smartAccountAddress}`, "info");
-        }
-      }
-      
-      console.error("Full error details:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      addTerminalLine(`Failed to create channel`, "error");
       return null;
     } finally {
       setIsLoading(false);
     }
-  }, [user, addTerminalLine, ensureSmartAccountReady]);
+  }, [user, addTerminalLine, ensureSmartAccountReady, createChannelWithSmartAccount]);
+
+  /**
+   * Send message transaction following the example pattern
+   * Pattern: sendMessage(publicClient, content, channelName, smartAccount)
+   */
+  const sendMessageWithSmartAccount = useCallback(async (
+    content: string,
+    channelName: string
+  ): Promise<Hash | null> => {
+    const publicClient = getGlobalPublicClient();
+    const smartAccount = getGlobalSmartAccount();
+    const bundlerClient = getGlobalBundlerClient();
+    const paymasterClient = getGlobalPaymasterClient();
+
+    if (!publicClient || !smartAccount || !bundlerClient) {
+      addTerminalLine("Smart Account not initialized", "error");
+      return null;
+    }
+
+    try {
+      addTerminalLine("Sending message on-chain...", "info");
+
+      // Create message hash
+      const msgHash = keccak256(toHex(content));
+
+      // Encode transaction data
+      const sendMessageTxData = [];
+      const sendMessageTx = {
+        to: CONTRACT_ADDRESS,
+        data: encodeFunctionData({
+          abi: MONAD_IRC_ABI,
+          functionName: "sendMessage",
+          args: [msgHash, channelName],
+        }),
+      };
+      sendMessageTxData.push(sendMessageTx);
+
+      // Send user operation with optional paymaster
+      const userOpHash = await bundlerClient.sendUserOperation({
+        account: smartAccount,
+        calls: sendMessageTxData,
+        ...(paymasterClient && ALCHEMY_POLICY_ID && {
+          paymaster: paymasterClient,
+          paymasterContext: {
+            policyId: ALCHEMY_POLICY_ID,
+          },
+        }),
+      });
+
+      addTerminalLine("Waiting for confirmation...", "info");
+
+      // Wait for user operation receipt
+      const sendMessageReceipt = await bundlerClient.waitForUserOperationReceipt({
+        hash: userOpHash,
+      });
+
+      return sendMessageReceipt.receipt.transactionHash;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      addTerminalLine(`Message send failed`, "error");
+      
+      // Provide helpful error messages
+      if (errorMessage.includes("insufficient funds") || errorMessage.includes("AA21")) {
+        addTerminalLine("Your Smart Account needs funds. Run 'fund <amount>' to add MON tokens.", "info");
+      } else if (errorMessage.includes("User denied") || errorMessage.includes("User rejected")) {
+        addTerminalLine("Please approve the transaction in MetaMask.", "info");
+      }
+      
+      console.error("Full error:", error);
+      return null;
+    }
+  }, [addTerminalLine]);
 
   /**
    * Send message using Smart Account
+   * Public interface wrapper for the transaction
    */
   const sendMessage = useCallback(async (
     content: string,
     channelName: string
   ): Promise<Hash | null> => {
     if (!user || !user.smartAccountAddress) {
-      addTerminalLine("❌ User or Smart Account not found", "error");
+      addTerminalLine("User or Smart Account not found", "error");
       return null;
     }
 
     setIsLoading(true);
     try {
-      // Ensure Smart Account is ready
       const isReady = await ensureSmartAccountReady();
       if (!isReady) {
         return null;
       }
 
-      // Get Smart Account and clients
-      const smartAccount = getGlobalSmartAccount();
-      const bundlerClient = getGlobalBundlerClient();
+      const txHash = await sendMessageWithSmartAccount(content, channelName);
       
-      if (!smartAccount || !bundlerClient) {
-        addTerminalLine("❌ Smart Account not initialized.", "error");
-        return null;
+      if (txHash) {
+        addTerminalLine("Message confirmed on-chain!", "system");
+        addTerminalLine(`   Tx: ${txHash}`, "info");
+        return txHash;
       }
-
-      // Create message hash (hash of content)
-      const msgHash = keccak256(toHex(content));
-
-      addTerminalLine("Sending message on-chain...", "info");
-
-      // Prepare transaction data
-      const data = encodeFunctionData({
-        abi: MONAD_IRC_ABI,
-        functionName: "sendMessage",
-        args: [msgHash, channelName],
-      });
-
-      // Retry configuration
-      const retryConfig: RetryConfig = {
-        maxAttempts: 3,
-        initialDelay: 2000,
-        maxDelay: 10000,
-        backoffMultiplier: 2,
-      };
-
-      // Execute user operation with retry logic
-      const result = await executeUserOperation(
-        bundlerClient,
-        smartAccount,
-        [
-          {
-            to: CONTRACT_ADDRESS,
-            data,
-            value: BigInt(0),
-          },
-        ],
-        {
-          maxFeePerGas: BigInt(200000000000), // 200 Gwei
-          maxPriorityFeePerGas: BigInt(200000000000),
-          timeout: 60000, // 60 seconds
-          retryConfig,
-          onLog: (message: string) => {
-            addTerminalLine(message, "system");
-          },
-        }
-      );
-
-      if (result.success) {
-        addTerminalLine("✅ Message confirmed on-chain!", "system");
-        return result.transactionHash;
-      } else {
-        addTerminalLine(`❌ Transaction failed: ${result.error}`, "error");
-        return null;
-      }
+      
+      return null;
     } catch (error) {
-      const { message, suggestions } = formatBundlerError(error);
-      
-      addTerminalLine(`❌ Message send failed: ${message}`, "error");
-      
-      // Display helpful suggestions
-      if (suggestions.length > 0) {
-        addTerminalLine("", "info");
-        suggestions.forEach(suggestion => {
-          addTerminalLine(`💡 ${suggestion}`, "info");
-        });
-        
-        // Add Smart Account address if it's a funding issue
-        if (message.includes("insufficient funds") || message.includes("AA21")) {
-          addTerminalLine("", "info");
-          addTerminalLine(`Smart Account: ${user.smartAccountAddress}`, "info");
-        }
-      }
-      
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      addTerminalLine(`Failed to send message`, "error");
       console.error("Full error:", error);
       return null;
     } finally {
       setIsLoading(false);
     }
-  }, [user, addTerminalLine, ensureSmartAccountReady]);
+  }, [user, addTerminalLine, ensureSmartAccountReady, sendMessageWithSmartAccount]);
 
   /**
    * Check Smart Account balance
    */
   const checkSmartAccountBalance = useCallback(async () => {
     if (!user || !user.smartAccountAddress) {
-      addTerminalLine("❌ User or Smart Account not found", "error");
+      addTerminalLine("User or Smart Account not found", "error");
       return null;
     }
 
@@ -290,18 +300,19 @@ export const useContract = () => {
       });
       
       const balanceInMon = Number(balance) / 1e18;
-      addTerminalLine(`💰 Smart Account Balance: ${balanceInMon.toFixed(6)} MON`, "system");
+      addTerminalLine(`Smart Account Balance: ${balanceInMon.toFixed(6)} MON`, "system");
       
       if (balanceInMon < 0.001) {
         addTerminalLine("", "warning");
-        addTerminalLine("⚠️  Balance is very low! Fund your Smart Account to send transactions.", "warning");
-        addTerminalLine("   Run: fund <amount> (e.g., fund 0.1)", "info");
+        addTerminalLine("  Balance is very low! Fund your Smart Account to send transactions.", "warning");
+        addTerminalLine("  Run: fund <amount> (e.g., fund 0.1)", "info");
       }
       
       return balance;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      addTerminalLine(`❌ Failed to check balance: ${errorMessage}`, "error");
+      addTerminalLine(`Failed to check balance`, "error");
+      console.error("Full error:", errorMessage);
       return null;
     }
   }, [user, addTerminalLine]);
@@ -311,25 +322,25 @@ export const useContract = () => {
    */
   const fundSmartAccount = useCallback(async (amountInEth: string): Promise<Hash | null> => {
     if (!user) {
-      addTerminalLine("❌ User not found", "error");
+      addTerminalLine("User not found", "error");
       return null;
     }
 
     // Validate MetaMask
     if (!isMetaMaskInstalled()) {
-      addTerminalLine("❌ MetaMask is required to fund Smart Account.", "error");
+      addTerminalLine("MetaMask is required to fund Smart Account.", "error");
       return null;
     }
 
     try {
       const smartAccount = getGlobalSmartAccount();
       if (!smartAccount) {
-        addTerminalLine("❌ Smart Account not initialized", "error");
+        addTerminalLine("Smart Account not initialized", "error");
         return null;
       }
 
       addTerminalLine(`Sending ${amountInEth} MON to Smart Account...`, "info");
-      addTerminalLine("⚠️  Please confirm the transaction in MetaMask", "warning");
+      addTerminalLine("Please confirm the transaction in MetaMask", "warning");
 
       // Request MetaMask to send transaction
       const txHash = await window.ethereum!.request({
@@ -347,16 +358,16 @@ export const useContract = () => {
       const publicClient = createMonadPublicClient();
       await publicClient.waitForTransactionReceipt({ hash: txHash });
       
-      addTerminalLine("✅ Smart Account funded!", "system");
+      addTerminalLine("Smart Account funded!", "system");
       
       return txHash;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       
       if (errorMessage.includes("User denied") || errorMessage.includes("User rejected")) {
-        addTerminalLine("❌ Transaction cancelled by user.", "warning");
+        addTerminalLine("Transaction cancelled by user.", "warning");
       } else {
-        addTerminalLine(`❌ Failed to fund Smart Account: ${errorMessage}`, "error");
+        addTerminalLine(`Failed to fund Smart Account: ${errorMessage}`, "error");
       }
       
       return null;

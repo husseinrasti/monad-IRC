@@ -15,10 +15,6 @@ export const HELP_TEXTS: Record<string, { usage: string; description: string; ex
     usage: "connect wallet",
     description: "Connects your MetaMask Smart Account via Delegation Toolkit",
   },
-  "authorize session": {
-    usage: "authorize session",
-    description: "Authorize a session key for gasless transactions (requires MetaMask confirmation)",
-  },
   balance: {
     usage: "balance",
     description: "Check your Smart Account balance (this is what pays for gas)",
@@ -27,15 +23,6 @@ export const HELP_TEXTS: Record<string, { usage: string; description: string; ex
     usage: "fund <amount>",
     description: "Fund your Smart Account with MON tokens for gas (requires MetaMask)",
     examples: ["fund 0.1", "fund 0.5"],
-  },
-  "session balance": {
-    usage: "session balance",
-    description: "Check session key wallet balance (for informational purposes only)",
-  },
-  "session fund": {
-    usage: "session fund <amount>",
-    description: "Fund session key wallet with MON (not typically needed)",
-    examples: ["session fund 0.1", "session fund 0.5"],
   },
   create: {
     usage: "create #channelName",
@@ -61,7 +48,7 @@ export const HELP_TEXTS: Record<string, { usage: string; description: string; ex
   },
   logout: {
     usage: "logout",
-    description: "Ends session and clears local session keys",
+    description: "Disconnects your wallet and Smart Account",
   },
   "username set": {
     usage: "username set <newName>",
@@ -72,6 +59,10 @@ export const HELP_TEXTS: Record<string, { usage: string; description: string; ex
     usage: "username clear",
     description: "Reset username to your wallet address",
   },
+  whoami: {
+    usage: "whoami",
+    description: "Display your user information from the database (username, addresses, connection details)",
+  },
 };
 
 export const parseCommand = (input: string): { command: string; args: string[] } => {
@@ -81,9 +72,6 @@ export const parseCommand = (input: string): { command: string; args: string[] }
   // Handle multi-word commands
   const multiWordCommands = [
     "connect wallet", 
-    "authorize session",
-    "session balance",
-    "session fund",
     "list channels",
     "username set",
     "username clear",
@@ -133,13 +121,13 @@ export const getAllCommandsHelp = (): string[] => {
     "Available Commands:",
     "",
     "Wallet & Account:",
-    "  connect wallet          - Connect your MetaMask wallet",
-    "  authorize session       - Authorize session key for gasless transactions",
+    "  connect wallet          - Connect your MetaMask Smart Account",
     "  balance                 - Check Smart Account balance (for gas)",
     "  fund <amount>           - Fund Smart Account with MON tokens",
     "  username set <name>     - Set a custom username",
     "  username clear          - Reset username to wallet address",
-    "  logout                  - Disconnect and end session",
+    "  whoami                  - Display your user information",
+    "  logout                  - Disconnect wallet",
     "",
     "Channels:",
     "  create #channelName     - Create a new channel",
@@ -151,10 +139,6 @@ export const getAllCommandsHelp = (): string[] => {
     "  help [command]          - Show this help or help for specific command",
     "  man [command]           - Alias for 'help'",
     "  clear                   - Clear terminal screen",
-    "",
-    "Advanced (optional):",
-    "  session balance         - Check session key balance (info only)",
-    "  session fund <amount>   - Fund session key wallet (rarely needed)",
     "",
     "Type 'help <command>' or 'man <command>' for more details on a specific command.",
   ];

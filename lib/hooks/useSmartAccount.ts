@@ -2,28 +2,35 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useIRC } from "@/lib/context/IRCContext";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { type Address } from "viem";
-import { type BundlerClient } from "viem/account-abstraction";
+import { type Address, type PublicClient, type WalletClient } from "viem";
+import { type BundlerClient, type PaymasterClient } from "viem/account-abstraction";
 import { type MetaMaskSmartAccount } from "@metamask/delegation-toolkit";
 import { 
   initializeSmartAccount,
   isMetaMaskInstalled,
-  ensureSmartAccountDeployed,
   isSmartAccountDeployed,
   createMonadPublicClient,
 } from "@/lib/utils/smartAccount";
 
-// Global storage for Smart Account and bundler client
-// This is needed because these instances must persist across renders
+// Global storage for Smart Account and clients
+// These instances persist across renders for transaction consistency
 let globalSmartAccount: MetaMaskSmartAccount | null = null;
-let globalBundlerClient: BundlerClient | null | undefined = null;
+let globalPublicClient: PublicClient | null = null;
+let globalWalletClient: WalletClient | null = null;
+let globalBundlerClient: BundlerClient | null = null;
+let globalPaymasterClient: PaymasterClient | null = null;
 
 /**
  * Hook for managing Smart Account connection and state
- * Uses MetaMask Delegation Toolkit for Smart Account management
- * Strictly enforces MetaMask wallet usage
+ * Uses MetaMask Delegation Toolkit exclusively
+ * 
+ * Features:
+ * - Simple wallet connection flow
+ * - Automatic Smart Account creation
+ * - No session management - direct signing via MetaMask
+ * - SDK handles all transaction complexity
  */
 export const useSmartAccount = () => {
   const { 
@@ -33,8 +40,6 @@ export const useSmartAccount = () => {
     user,
     isWalletMonitoring,
     setWalletMonitoring,
-    setDelegationSession,
-    setDelegationActive,
   } = useIRC();
   
   const [isConnecting, setIsConnecting] = useState(false);
@@ -54,10 +59,31 @@ export const useSmartAccount = () => {
   }, []);
 
   /**
+   * Get the stored public client instance
+   */
+  const getPublicClient = useCallback(() => {
+    return globalPublicClient;
+  }, []);
+
+  /**
+   * Get the stored wallet client instance
+   */
+  const getWalletClient = useCallback(() => {
+    return globalWalletClient;
+  }, []);
+
+  /**
    * Get the stored bundler client instance
    */
   const getBundlerClient = useCallback(() => {
     return globalBundlerClient;
+  }, []);
+
+  /**
+   * Get the stored paymaster client instance
+   */
+  const getPaymasterClient = useCallback(() => {
+    return globalPaymasterClient;
   }, []);
 
   /**
@@ -82,7 +108,6 @@ export const useSmartAccount = () => {
         params: [message, walletAddress],
       }) as string;
       
-      addTerminalLine("Verification message signed successfully!", "system");
       return signature;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
@@ -145,10 +170,11 @@ export const useSmartAccount = () => {
       addTerminalLine("Wallet disconnected by user.", "warning");
       setUser(null);
       setConnected(false);
-      setDelegationSession(null);
-      setDelegationActive(false);
       globalSmartAccount = null;
+      globalPublicClient = null;
+      globalWalletClient = null;
       globalBundlerClient = null;
+      globalPaymasterClient = null;
     } else if (accounts[0] !== user?.walletAddress) {
       // User switched accounts
       addTerminalLine(`Account changed to: ${accounts[0]}`, "warning");
@@ -157,12 +183,13 @@ export const useSmartAccount = () => {
       // Disconnect current session
       setUser(null);
       setConnected(false);
-      setDelegationSession(null);
-      setDelegationActive(false);
       globalSmartAccount = null;
+      globalPublicClient = null;
+      globalWalletClient = null;
       globalBundlerClient = null;
+      globalPaymasterClient = null;
     }
-  }, [user, setUser, setConnected, setDelegationSession, setDelegationActive, addTerminalLine]);
+  }, [user, setUser, setConnected, addTerminalLine]);
 
   /**
    * Handle chain/network changes
@@ -202,10 +229,11 @@ export const useSmartAccount = () => {
       addTerminalLine("Wallet disconnected.", "warning");
       setUser(null);
       setConnected(false);
-      setDelegationSession(null);
-      setDelegationActive(false);
       globalSmartAccount = null;
+      globalPublicClient = null;
+      globalWalletClient = null;
       globalBundlerClient = null;
+      globalPaymasterClient = null;
     };
 
     // Setup listeners
@@ -216,7 +244,7 @@ export const useSmartAccount = () => {
     }
 
     setWalletMonitoring(true);
-  }, [isWalletMonitoring, handleAccountsChanged, handleChainChanged, setWalletMonitoring, setUser, setConnected, setDelegationSession, setDelegationActive, addTerminalLine]);
+  }, [isWalletMonitoring, handleAccountsChanged, handleChainChanged, setWalletMonitoring, setUser, setConnected, addTerminalLine]);
 
   /**
    * Cleanup wallet monitoring
@@ -241,6 +269,8 @@ export const useSmartAccount = () => {
 
   /**
    * Connect Smart Account using MetaMask Delegation Toolkit
+   * Simple flow: Connect → Create Smart Account → Done
+   * No session management needed - SDK handles everything
    */
   const connectSmartAccount = useCallback(async () => {
     setIsConnecting(true);
@@ -278,11 +308,22 @@ export const useSmartAccount = () => {
         return;
       }
 
-      const { eoaAddress, smartAccountAddress, smartAccount, bundlerClient, publicClient } = smartAccountData;
+      const { 
+        eoaAddress, 
+        smartAccountAddress, 
+        smartAccount, 
+        publicClient,
+        walletClient,
+        bundlerClient,
+        paymasterClient,
+      } = smartAccountData;
       
-      // Store Smart Account and bundler client globally
+      // Store all clients globally
       globalSmartAccount = smartAccount;
+      globalPublicClient = publicClient;
+      globalWalletClient = walletClient;
       globalBundlerClient = bundlerClient;
+      globalPaymasterClient = paymasterClient;
       
       addTerminalLine(`EOA Address: ${eoaAddress}`, "system");
       addTerminalLine(`Smart Account: ${smartAccountAddress}`, "system");
@@ -291,9 +332,9 @@ export const useSmartAccount = () => {
       const isDeployed = await isSmartAccountDeployed(publicClient, smartAccountAddress);
       
       if (!isDeployed) {
-        addTerminalLine("It will be deployed automatically with your first transaction.", "info");
+        addTerminalLine("Smart Account will be deployed with your first transaction.", "info");
       } else {
-        addTerminalLine("✅ Smart Account already deployed!", "system");
+        addTerminalLine("Smart Account already deployed!", "system");
       }
       
       // Sign verification message
@@ -303,7 +344,7 @@ export const useSmartAccount = () => {
       );
       
       if (!signature) {
-        addTerminalLine("❌ Verification signature required to proceed.", "error");
+        addTerminalLine("Verification signature required to proceed.", "error");
         setIsConnecting(false);
         return;
       }
@@ -321,23 +362,26 @@ export const useSmartAccount = () => {
         // Setup wallet monitoring
         setupWalletMonitoring();
         
-        addTerminalLine("Run 'authorize session' to enable gasless transactions.", "info");
+        addTerminalLine("Connected! You can now join channels and send messages.", "system");
       }
 
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       
       if (errorMessage.includes("User rejected") || errorMessage.includes("User denied")) {
-        addTerminalLine("❌ Connection cancelled by user.", "warning");
+        addTerminalLine("Connection cancelled by user.", "warning");
       } else if (errorMessage.includes("MetaMask")) {
         addTerminalLine("Please ensure MetaMask is properly installed and unlocked.", "info");
       } else {
-        addTerminalLine(`❌ Connection failed: ${errorMessage}`, "error");
+        addTerminalLine(`Connection failed: ${errorMessage}`, "error");
       }
       
       // Clean up on error
       globalSmartAccount = null;
+      globalPublicClient = null;
+      globalWalletClient = null;
       globalBundlerClient = null;
+      globalPaymasterClient = null;
     } finally {
       setIsConnecting(false);
     }
@@ -357,12 +401,13 @@ export const useSmartAccount = () => {
     cleanupWalletMonitoring();
     setUser(null);
     setConnected(false);
-    setDelegationSession(null);
-    setDelegationActive(false);
     globalSmartAccount = null;
+    globalPublicClient = null;
+    globalWalletClient = null;
     globalBundlerClient = null;
+    globalPaymasterClient = null;
     addTerminalLine("Smart Account disconnected.", "info");
-  }, [setUser, setConnected, setDelegationSession, setDelegationActive, addTerminalLine, cleanupWalletMonitoring]);
+  }, [setUser, setConnected, addTerminalLine, cleanupWalletMonitoring]);
 
   /**
    * Cleanup on unmount
@@ -377,13 +422,19 @@ export const useSmartAccount = () => {
     connectSmartAccount,
     disconnectSmartAccount,
     getSmartAccount,
+    getPublicClient,
+    getWalletClient,
     getBundlerClient,
+    getPaymasterClient,
     isConnecting,
     isDeploying,
     isWalletMonitoring,
   };
 };
 
-// Export functions to access global Smart Account and bundler client
+// Export functions to access global clients
 export const getGlobalSmartAccount = () => globalSmartAccount;
+export const getGlobalPublicClient = () => globalPublicClient;
+export const getGlobalWalletClient = () => globalWalletClient;
 export const getGlobalBundlerClient = () => globalBundlerClient;
+export const getGlobalPaymasterClient = () => globalPaymasterClient;

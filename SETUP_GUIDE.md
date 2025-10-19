@@ -81,7 +81,7 @@ NEXT_PUBLIC_MONAD_RPC_URL=https://testnet-rpc.monad.xyz
 NEXT_PUBLIC_BUNDLER_URL=https://api.pimlico.io/v2/monad-testnet/YOUR_PIMLICO_KEY
 
 # Smart Contract (already deployed)
-NEXT_PUBLIC_CONTRACT_ADDRESS=0xe7c967CAd49CC37e9f248Fba265bf8562eDE0d17
+NEXT_PUBLIC_CONTRACT_ADDRESS=0x99ff09C8163822c34A4d91D842B03af42A610aAC
 
 # Convex (get from `pnpm convex:dev`)
 NEXT_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
@@ -190,7 +190,7 @@ Should return current block number.
 
 #### 2. Check Contract Deployment
 
-Go to http://localhost:3000 and open browser console. Check for contract at address `0xe7c967CAd49CC37e9f248Fba265bf8562eDE0d17`.
+Go to http://localhost:3000 and open browser console. Check for contract at address `0x99ff09C8163822c34A4d91D842B03af42A610aAC`.
 
 #### 3. Check HyperIndex
 

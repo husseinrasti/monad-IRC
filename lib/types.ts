@@ -32,22 +32,12 @@ export interface User {
   lastConnected?: Date;
 }
 
-export interface DelegationSession {
-  sessionAddress: string; // Delegated signer address
-  validUntil: number; // Expiry timestamp
-  allowedContracts: string[]; // Contracts this session can interact with
-  isActive: boolean;
-  createdAt: Date;
-}
-
 export interface IRCState {
   user: User | null;
-  delegationSession: DelegationSession | null;
   currentChannel: Channel | null;
   channels: Channel[];
   messages: Message[];
   isConnected: boolean;
-  isDelegationActive: boolean;
   isWalletMonitoring: boolean; // Track if we're monitoring wallet state
 }
 

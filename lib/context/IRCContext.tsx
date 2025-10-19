@@ -1,17 +1,15 @@
 "use client";
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from "react";
-import { IRCState, User, Channel, Message, DelegationSession, TerminalLine } from "@/lib/types";
+import { IRCState, User, Channel, Message, TerminalLine } from "@/lib/types";
 
 interface IRCContextType extends IRCState {
   setUser: (user: User | null) => void;
-  setDelegationSession: (session: DelegationSession | null) => void;
   setCurrentChannel: (channel: Channel | null) => void;
   addChannel: (channel: Channel) => void;
   addMessage: (message: Message) => void;
   updateMessage: (id: string, updates: Partial<Message>) => void;
   setConnected: (connected: boolean) => void;
-  setDelegationActive: (active: boolean) => void;
   setWalletMonitoring: (monitoring: boolean) => void;
   terminalLines: TerminalLine[];
   addTerminalLine: (content: string, type?: TerminalLine["type"]) => void;
@@ -22,12 +20,10 @@ const IRCContext = createContext<IRCContextType | undefined>(undefined);
 
 export const IRCProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [delegationSession, setDelegationSession] = useState<DelegationSession | null>(null);
   const [currentChannel, setCurrentChannel] = useState<Channel | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isConnected, setConnected] = useState(false);
-  const [isDelegationActive, setDelegationActive] = useState(false);
   const [isWalletMonitoring, setWalletMonitoring] = useState(false);
   const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([
     {
@@ -128,24 +124,18 @@ export const IRCProvider = ({ children }: { children: ReactNode }) => {
     },
     {
       id: "welcome-6",
-      content: "- authorize session    → authorize session key for message signing",
-      type: "output",
-      timestamp: new Date(),
-    },
-    {
-      id: "welcome-7",
       content: "- join #general        → join the default channel",
       type: "output",
       timestamp: new Date(),
     },
     {
-      id: "welcome-8",
+      id: "welcome-7",
       content: "- help or man          → view all available commands",
       type: "output",
       timestamp: new Date(),
     },
     {
-      id: "welcome-9",
+      id: "welcome-8",
       content: "",
       type: "output",
       timestamp: new Date(),
@@ -186,21 +176,17 @@ export const IRCProvider = ({ children }: { children: ReactNode }) => {
 
   const value: IRCContextType = {
     user,
-    delegationSession,
     currentChannel,
     channels,
     messages,
     isConnected,
-    isDelegationActive,
     isWalletMonitoring,
     setUser,
-    setDelegationSession,
     setCurrentChannel,
     addChannel,
     addMessage,
     updateMessage,
     setConnected,
-    setDelegationActive,
     setWalletMonitoring,
     terminalLines,
     addTerminalLine,

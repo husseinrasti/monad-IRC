@@ -7,11 +7,14 @@ import {
   custom, 
   type PublicClient, 
   type WalletClient,
-  type Account,
   type Address,
-  type Chain,
 } from "viem";
-import { createBundlerClient, type BundlerClient } from "viem/account-abstraction";
+import { 
+  createBundlerClient, 
+  createPaymasterClient,
+  type BundlerClient,
+  type PaymasterClient,
+} from "viem/account-abstraction";
 import { 
   toMetaMaskSmartAccount, 
   Implementation,
@@ -21,12 +24,23 @@ import { monadTestnet } from "./monadChain";
 
 /**
  * Smart Account Client utilities for Monad IRC
- * This module provides utilities to create and manage MetaMask Smart Accounts
- * using the MetaMask Delegation Toolkit SDK
+ * Built with @metamask/delegation-toolkit and viem/account-abstraction
+ * 
+ * Architecture:
+ * 1. Create Smart Account via MetaMask Delegation Toolkit
+ * 2. Use createBundlerClient for ERC-4337 user operations
+ * 3. Use createPaymasterClient for gasless transactions (optional)
  */
 
 const RPC_URL = process.env.NEXT_PUBLIC_MONAD_RPC_URL || "https://testnet-rpc.monad.xyz";
-const BUNDLER_URL = process.env.NEXT_PUBLIC_BUNDLER_URL || RPC_URL; // Use RPC URL as fallback
+const ALCHEMY_API_KEY = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY || "";
+const ALCHEMY_POLICY_ID = process.env.NEXT_PUBLIC_ALCHEMY_POLICY_ID || "";
+
+// Alchemy bundler endpoint format: https://monad-testnet.g.alchemy.com/v2/YOUR_API_KEY
+const BUNDLER_URL = ALCHEMY_API_KEY 
+  ? `https://monad-testnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`
+  : process.env.NEXT_PUBLIC_BUNDLER_URL || RPC_URL;
+
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
 
 /**
@@ -58,89 +72,59 @@ export const createMonadPublicClient = (): PublicClient => {
 };
 
 /**
- * Create a bundler client for handling Smart Account user operations
- * Note: Monad testnet may not have bundler support yet
+ * Create a MetaMask Smart Account using the Delegation Toolkit
+ * Follows the pattern from the example: toMetaMaskSmartAccount with walletClient signer
+ * 
+ * @param publicClient - Public client for blockchain reads
+ * @param walletClient - Wallet client for signing
+ * @param owner - Owner address (EOA from MetaMask)
+ * @returns MetaMaskSmartAccount instance
  */
-export const createMonadBundlerClient = (): BundlerClient | null => {
-  try {
-    // Check if a custom bundler URL is configured
-    const customBundlerUrl = process.env.NEXT_PUBLIC_BUNDLER_URL;
-    
-    if (!customBundlerUrl) {
-      console.warn("No bundler URL configured. Bundler client not available.");
-      return null;
-    }
-    
-    return createBundlerClient({
-      chain: monadTestnet,
-      transport: http(customBundlerUrl),
-    });
-  } catch (error) {
-    console.error("Failed to create bundler client:", error);
-    return null;
-  }
-};
-
-/**
- * Create a wallet client connected to MetaMask
- */
-export const createMetaMaskWalletClient = async (): Promise<WalletClient | null> => {
-  try {
-    validateMetaMaskWallet();
-
-    const walletClient = createWalletClient({
-      chain: monadTestnet,
-      transport: custom(window.ethereum!),
-    });
-
-    return walletClient;
-  } catch (error) {
-    console.error("Failed to create MetaMask wallet client:", error);
-    return null;
-  }
-};
-
-/**
- * Create or fetch a MetaMask Smart Account using the Delegation Toolkit SDK
- */
-export const createMetaMaskSmartAccount = async (
+export const createSmartAccount = async (
   publicClient: PublicClient,
-  ownerAddress: Address
-): Promise<MetaMaskSmartAccount | null> => {
-  try {
-    console.log("Creating MetaMask Smart Account for:", ownerAddress);
+  walletClient: WalletClient,
+  owner: Address
+): Promise<MetaMaskSmartAccount> => {
+  // Create wallet client with explicit account for signing
+  const signingWalletClient = createWalletClient({
+    account: owner,
+    chain: monadTestnet,
+    transport: custom(window.ethereum!),
+  });
 
-    // Create a wallet client for signing through MetaMask
-    const signingWalletClient = createWalletClient({
-      account: ownerAddress,
-      chain: monadTestnet,
-      transport: custom(window.ethereum!),
-    });
+  const smartAccount = await toMetaMaskSmartAccount({
+    client: publicClient,
+    implementation: Implementation.Hybrid,
+    deployParams: [owner, [], [], []],
+    deploySalt: "0x0000000000000000000000000000000000000000000000000000000000000000",
+    signer: { walletClient: signingWalletClient },
+  });
+  
+  return smartAccount;
+};
 
-    // Create MetaMask Smart Account using the Delegation Toolkit
-    // Using Hybrid implementation with EOA owner
-    // deployParams: [owner, keyIds, xValues, yValues] for Hybrid
-    const smartAccount = await toMetaMaskSmartAccount({
-      client: publicClient,
-      implementation: Implementation.Hybrid,
-      deployParams: [
-        ownerAddress, // owner address
-        [], // keyIds (empty for ECDSA-only)
-        [], // xValues (empty for ECDSA-only)
-        [], // yValues (empty for ECDSA-only)
-      ],
-      deploySalt: "0x0000000000000000000000000000000000000000000000000000000000000000",
-      signer: {
-        walletClient: signingWalletClient,
-      },
-    });
+/**
+ * Create Alchemy bundler client for handling ERC-4337 user operations
+ * 
+ * @param publicClient - Public client instance
+ * @returns BundlerClient configured for Alchemy's bundler
+ */
+export const createMonadBundlerClient = (publicClient: PublicClient): BundlerClient => {
+  return createBundlerClient({
+    client: publicClient,
+    transport: http(BUNDLER_URL),
+  });
+};
 
-    console.log("MetaMask Smart Account created:", smartAccount.address);
-    return smartAccount;
-  } catch (error) {
-    console.error("Failed to create MetaMask Smart Account:", error);
-    return null;
-  }
+/**
+ * Create paymaster client for gasless transactions
+ * 
+ * @returns PaymasterClient configured for Alchemy's paymaster
+ */
+export const createMonadPaymasterClient = (): PaymasterClient => {
+  return createPaymasterClient({
+    transport: http(BUNDLER_URL),
+  });
 };
 
 /**
@@ -162,67 +146,32 @@ export const isSmartAccountDeployed = async (
 };
 
 /**
- * Check if Smart Account needs deployment
- * Note: Smart Accounts are deployed automatically with the first transaction
- * We don't need to manually deploy them
- */
-export const ensureSmartAccountDeployed = async (
-  smartAccount: MetaMaskSmartAccount,
-  bundlerClient: BundlerClient | null
-): Promise<boolean> => {
-  try {
-    const publicClient = createMonadPublicClient();
-    const isDeployed = await isSmartAccountDeployed(publicClient, smartAccount.address);
-
-    if (isDeployed) {
-      console.log("Smart Account already deployed at:", smartAccount.address);
-      return true;
-    }
-
-    if (!bundlerClient) {
-      console.log("Smart Account not deployed. Without bundler, deployment must be done manually via direct transaction.");
-      return true; // Allow transaction to proceed
-    }
-
-    console.log("Smart Account not deployed yet. It will be deployed automatically with your first transaction.");
-    // Return true because deployment will happen automatically with the first user operation
-    return true;
-  } catch (error) {
-    console.error("Failed to check Smart Account deployment:", error);
-    // Even if check fails, return true to allow the transaction to proceed
-    // The bundler will handle deployment if needed
-    return true;
-  }
-};
-
-/**
- * Initialize Smart Account with MetaMask Delegation Toolkit
+ * Initialize Smart Account with all necessary clients
+ * Follows the pattern from the example with separated client creation
+ * 
+ * @returns Object containing all clients and account information
  */
 export const initializeSmartAccount = async (): Promise<{
   eoaAddress: Address;
   smartAccountAddress: Address;
   smartAccount: MetaMaskSmartAccount;
-  walletClient: WalletClient;
   publicClient: PublicClient;
-  bundlerClient: BundlerClient | null;
+  walletClient: WalletClient;
+  bundlerClient: BundlerClient;
+  paymasterClient: PaymasterClient | null;
 } | null> => {
   try {
     // Validate MetaMask is installed
     validateMetaMaskWallet();
 
-    // Create clients
-    const walletClient = await createMetaMaskWalletClient();
-    if (!walletClient) {
-      throw new Error("Failed to create MetaMask wallet client");
-    }
-
+    // Create public client
     const publicClient = createMonadPublicClient();
-    const bundlerClient = createMonadBundlerClient();
-    
-    if (!bundlerClient) {
-      console.warn("⚠️  Bundler client not available. Account abstraction features will be limited.");
-      console.warn("To enable full AA features, configure NEXT_PUBLIC_BUNDLER_URL in your environment.");
-    }
+
+    // Create wallet client with MetaMask
+    const walletClient = createWalletClient({
+      chain: monadTestnet,
+      transport: custom(window.ethereum!),
+    });
 
     // Get accounts from MetaMask
     const accounts = await walletClient.getAddresses();
@@ -230,31 +179,36 @@ export const initializeSmartAccount = async (): Promise<{
       throw new Error("No accounts found in MetaMask");
     }
 
-    const eoaAddress = accounts[0];
+    const owner = accounts[0];
 
-    // Create MetaMask Smart Account
-    const smartAccount = await createMetaMaskSmartAccount(
-      publicClient, 
-      eoaAddress
-    );
-    
-    if (!smartAccount) {
-      throw new Error("Failed to create MetaMask Smart Account");
+    // Create Smart Account
+    const smartAccount = await createSmartAccount(publicClient, walletClient, owner);
+    console.log("Smart Account Address:", smartAccount.address);
+
+    // Create bundler client
+    const bundlerClient = createMonadBundlerClient(publicClient);
+
+    // Create paymaster client (optional)
+    let paymasterClient: PaymasterClient | null = null;
+    if (ALCHEMY_API_KEY && ALCHEMY_POLICY_ID) {
+      paymasterClient = createMonadPaymasterClient();
+      console.log("✅ Paymaster client created for gasless transactions");
+    } else {
+      console.log("⚠️  No paymaster configured. Transactions will require gas.");
     }
 
-    const smartAccountAddress = smartAccount.address;
-
-    // Check if Smart Account is deployed
-    const isDeployed = await isSmartAccountDeployed(publicClient, smartAccountAddress);
-    console.log("Smart Account deployment status:", isDeployed ? "Deployed" : "Not deployed");
+    // Check deployment status
+    const isDeployed = await isSmartAccountDeployed(publicClient, smartAccount.address);
+    console.log("Smart Account deployment status:", isDeployed ? "✅ Deployed" : "⏳ Will deploy with first transaction");
 
     return {
-      eoaAddress,
-      smartAccountAddress,
+      eoaAddress: owner,
+      smartAccountAddress: smartAccount.address,
       smartAccount,
-      walletClient,
       publicClient,
+      walletClient,
       bundlerClient,
+      paymasterClient,
     };
   } catch (error) {
     console.error("Failed to initialize Smart Account:", error);
@@ -262,4 +216,10 @@ export const initializeSmartAccount = async (): Promise<{
   }
 };
 
-export { CONTRACT_ADDRESS, RPC_URL, BUNDLER_URL };
+export { 
+  CONTRACT_ADDRESS, 
+  RPC_URL, 
+  BUNDLER_URL, 
+  ALCHEMY_API_KEY,
+  ALCHEMY_POLICY_ID,
+};

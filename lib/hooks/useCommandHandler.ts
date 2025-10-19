@@ -3,7 +3,6 @@
 import { useCallback } from "react";
 import { useIRC } from "@/lib/context/IRCContext";
 import { useSmartAccount } from "./useSmartAccount";
-import { useDelegation } from "./useDelegation";
 import { useUsername } from "./useUsername";
 import { useContract } from "./useContract";
 import { parseCommand, formatHelpText, getAllCommandsHelp } from "@/lib/commands/commands";
@@ -12,14 +11,13 @@ import { api } from "@/lib/api/client";
 
 /**
  * Hook for handling user commands in the IRC terminal
- * Updated to use Smart Account and delegation-based transactions
+ * Uses MetaMask Delegation Toolkit exclusively for all Smart Account operations
  */
 export const useCommandHandler = () => {
   const {
     addTerminalLine,
     clearTerminal,
     isConnected,
-    isDelegationActive,
     currentChannel,
     setCurrentChannel,
     channels,
@@ -30,7 +28,6 @@ export const useCommandHandler = () => {
   } = useIRC();
 
   const { connectSmartAccount, disconnectSmartAccount } = useSmartAccount();
-  const { authorizeDelegation, revokeDelegation } = useDelegation();
   const { setUsername, clearUsername } = useUsername();
   const { 
     createChannel: createChannelOnChain, 
@@ -52,10 +49,6 @@ export const useCommandHandler = () => {
         return;
       }
 
-      if (!isDelegationActive) {
-        addTerminalLine("Please authorize delegation session first to send messages.", "error");
-        return;
-      }
 
       try {
         // Create message hash
@@ -111,7 +104,7 @@ export const useCommandHandler = () => {
         addTerminalLine(`Failed to send message: ${errorMessage}`, "error");
       }
     },
-    [currentChannel, user, isDelegationActive, addMessage, updateMessage, sendMessageOnChain, addTerminalLine]
+    [currentChannel, user, addMessage, updateMessage, sendMessageOnChain, addTerminalLine]
   );
 
   const handleCommand = useCallback(
@@ -148,14 +141,6 @@ export const useCommandHandler = () => {
           await connectSmartAccount();
           break;
 
-        case "authorize session":
-          if (!isConnected) {
-            addTerminalLine("Please connect your Smart Account first.", "error");
-            break;
-          }
-          await authorizeDelegation();
-          break;
-
         case "balance":
           if (!isConnected) {
             addTerminalLine("Please connect your Smart Account first.", "error");
@@ -187,34 +172,9 @@ export const useCommandHandler = () => {
           await fundSmartAccount(fundAmount);
           break;
 
-        case "session fund":
-          if (!isConnected) {
-            addTerminalLine("Please connect your Smart Account first.", "error");
-            break;
-          }
-          if (args.length === 0) {
-            addTerminalLine("Usage: session fund <amount>", "error");
-            addTerminalLine("Example: session fund 0.1", "info");
-            addTerminalLine("This will fund your Smart Account for gas fees.", "info");
-            break;
-          }
-          
-          const amount = args[0];
-          if (isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
-            addTerminalLine("Invalid amount. Please provide a positive number.", "error");
-            break;
-          }
-          
-          await fundSmartAccount(amount);
-          break;
-
         case "create":
           if (!isConnected) {
             addTerminalLine("Please connect your Smart Account first.", "error");
-            break;
-          }
-          if (!isDelegationActive) {
-            addTerminalLine("Please authorize delegation session first.", "error");
             break;
           }
           if (args.length === 0) {
@@ -248,7 +208,6 @@ export const useCommandHandler = () => {
 
             // Transaction confirmed - HyperIndex will detect the event and update Convex
             addTerminalLine(`Channel ${createChannelName} created on-chain!`, "system");
-            addTerminalLine("Channel will appear shortly via HyperIndex...", "info");
             addTerminalLine(`Type 'join ${createChannelName}' to enter the channel.`, "info");
           } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "Unknown error";
@@ -349,23 +308,10 @@ export const useCommandHandler = () => {
             break;
           }
 
-          try {
-            // If delegation is active, revoke it
-            if (isDelegationActive) {
-              await revokeDelegation();
-            }
-
-            // Disconnect Smart Account and clear state
-            disconnectSmartAccount();
-            setCurrentChannel(null);
-            addTerminalLine("Logged out successfully.", "system");
-          } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : "Unknown error";
-            addTerminalLine(`Logout failed: ${errorMessage}`, "error");
-            // Still disconnect even if revocation fails
-            disconnectSmartAccount();
-            setCurrentChannel(null);
-          }
+          // Disconnect Smart Account and clear state
+          disconnectSmartAccount();
+          setCurrentChannel(null);
+          addTerminalLine("Logged out successfully.", "system");
           break;
 
         case "username set":
@@ -389,6 +335,56 @@ export const useCommandHandler = () => {
           await clearUsername();
           break;
 
+        case "whoami":
+          if (!isConnected) {
+            addTerminalLine("Please connect your Smart Account first.", "error");
+            break;
+          }
+          if (!user) {
+            addTerminalLine("User not found. Please reconnect your Smart Account.", "error");
+            break;
+          }
+          
+          try {
+            // Fetch user data from database
+            const userData = await api.getUserByWallet(user.walletAddress);
+            
+            if (!userData) {
+              addTerminalLine("User data not found in database.", "error");
+              break;
+            }
+            
+            addTerminalLine("", "output");
+            addTerminalLine("═══════════════════════════════════════════════════════", "system");
+            addTerminalLine("  USER INFORMATION", "system");
+            addTerminalLine("═══════════════════════════════════════════════════════", "system");
+            addTerminalLine("", "output");
+            addTerminalLine(`  Username:        ${userData.username}`, "info");
+            addTerminalLine(`  Wallet Address:  ${userData.walletAddress}`, "info");
+            
+            if (userData.smartAccountAddress) {
+              addTerminalLine(`  Smart Account:   ${userData.smartAccountAddress}`, "info");
+            }
+            
+            addTerminalLine("", "output");
+            
+            const createdDate = new Date(userData._creationTime);
+            addTerminalLine(`  Account Created: ${createdDate.toLocaleString()}`, "output");
+            
+            if (userData.lastConnected) {
+              const lastConnectedDate = new Date(userData.lastConnected);
+              addTerminalLine(`  Last Connected:  ${lastConnectedDate.toLocaleString()}`, "output");
+            }
+            
+            addTerminalLine("", "output");
+            addTerminalLine("═══════════════════════════════════════════════════════", "system");
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+            addTerminalLine(`Failed to fetch user information: ${errorMessage}`, "error");
+            console.error("whoami error:", error);
+          }
+          break;
+
         default:
           addTerminalLine(`Unknown command: ${command}`, "error");
           addTerminalLine("Type 'help' to see available commands.", "info");
@@ -399,7 +395,6 @@ export const useCommandHandler = () => {
       addTerminalLine,
       clearTerminal,
       isConnected,
-      isDelegationActive,
       currentChannel,
       setCurrentChannel,
       channels,
@@ -407,8 +402,6 @@ export const useCommandHandler = () => {
       user,
       connectSmartAccount,
       disconnectSmartAccount,
-      authorizeDelegation,
-      revokeDelegation,
       setUsername,
       clearUsername,
       handleRegularMessage,
@@ -416,6 +409,7 @@ export const useCommandHandler = () => {
       addMessage,
       updateMessage,
       fundSmartAccount,
+      checkSmartAccountBalance,
     ]
   );
 
