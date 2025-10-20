@@ -48,11 +48,48 @@ const MainTerminal = () => {
         ref={outputRef}
         className="flex-1 overflow-y-auto px-4 py-2 scrollbar-hide min-h-0"
       >
-        {terminalLines.map((line) => (
-          <div key={line.id} className={cn("font-mono whitespace-pre-wrap", getLineColor(line.type))}>
-            {line.content}
-          </div>
-        ))}
+        {terminalLines.map((line) => {
+          const isBanner = line.id.startsWith("banner-");
+          
+          // Group banner lines together with accessibility
+          if (isBanner && line.id === "banner-1") {
+            const bannerLines = terminalLines.filter(l => l.id.startsWith("banner-"));
+            return (
+              <div
+                key="banner-group"
+                role="img"
+                aria-label="Monad IRC ASCII banner"
+                className="overflow-x-auto mb-2"
+                style={{ fontSize: '0.35rem', lineHeight: '0.5rem' }}
+              >
+                {bannerLines.map((bannerLine) => (
+                  <div
+                    key={bannerLine.id}
+                    className={cn(
+                      "font-mono whitespace-pre",
+                      getLineColor(bannerLine.type)
+                    )}
+                    style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace' }}
+                  >
+                    {bannerLine.content}
+                  </div>
+                ))}
+              </div>
+            );
+          }
+          
+          // Skip other banner lines as they're rendered in the group
+          if (isBanner) {
+            return null;
+          }
+          
+          // Render non-banner lines normally
+          return (
+            <div key={line.id} className={cn("font-mono whitespace-pre-wrap", getLineColor(line.type))}>
+              {line.content}
+            </div>
+          );
+        })}
       </div>
 
       {/* Input - always visible at bottom */}

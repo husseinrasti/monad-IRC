@@ -10,7 +10,8 @@
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy",
     "envio:dev": "cd envio && pnpm dev",
-    "dev:all": "concurrently \"npm run dev\" \"npm run convex:dev\" \"npm run envio:dev\""
+    "dev:all": "concurrently \"npm run dev\" \"npm run convex:dev\" \"npm run envio:dev\"",
+    "validate:banner": "node tests/validate-banner.js"
   },
   "dependencies": {
     "@apollo/client": "^3.11.8",
