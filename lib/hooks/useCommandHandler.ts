@@ -85,14 +85,10 @@ export const useCommandHandler = () => {
         addTerminalLine(`[${displayName(user.username)}] ${message}`, "output");
 
         // Send to blockchain using Smart Account + Bundler + Paymaster
-        addTerminalLine("Sending message on-chain...", "info");
         const txHash = await sendMessageOnChain(message, currentChannel.name);
 
         if (txHash) {
           addTerminalLine("Message sent on-chain!", "system");
-          addTerminalLine(`   Tx: ${txHash}`, "info");
-          addTerminalLine("Waiting for HyperIndex confirmation...", "info");
-          
           // Note: Message status will be updated to "confirmed" by HyperIndex
           // when it detects the MessageSent event and calls updateMessageStatusFromHyperIndex
         } else {
@@ -439,5 +435,5 @@ export const useCommandHandler = () => {
     ]
   );
 
-  return { handleCommand };
+  return { handleCommand, handleRegularMessage };
 };

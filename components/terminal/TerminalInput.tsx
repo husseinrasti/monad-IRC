@@ -8,9 +8,10 @@ interface TerminalInputProps {
   prompt?: string;
   disabled?: boolean;
   className?: string;
+  placeholder?: string;
 }
 
-const TerminalInput = ({ onSubmit, prompt = ">", disabled = false, className }: TerminalInputProps) => {
+const TerminalInput = ({ onSubmit, prompt = ">", disabled = false, className, placeholder = "Type a command..." }: TerminalInputProps) => {
   const [input, setInput] = useState("");
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -82,7 +83,7 @@ const TerminalInput = ({ onSubmit, prompt = ">", disabled = false, className }: 
         onKeyDown={handleKeyDown}
         disabled={disabled}
         className="flex-1 bg-transparent text-terminal-text outline-none font-mono disabled:opacity-50 disabled:cursor-not-allowed"
-        placeholder={disabled ? "..." : "Type a command..."}
+        placeholder={disabled ? "..." : placeholder}
         autoComplete="off"
         spellCheck={false}
         autoFocus

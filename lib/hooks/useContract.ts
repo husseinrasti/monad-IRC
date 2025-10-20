@@ -269,13 +269,11 @@ export const useContract = () => {
       
       if (txHash) {
         addTerminalLine("Message confirmed on-chain!", "system");
-        addTerminalLine(`   Tx: ${txHash}`, "info");
         return txHash;
       }
       
       return null;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
       addTerminalLine(`Failed to send message`, "error");
       console.error("Full error:", error);
       return null;

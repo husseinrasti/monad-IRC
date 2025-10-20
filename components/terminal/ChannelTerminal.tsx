@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo, useCallback } from "react";
 import { useIRC } from "@/lib/context/IRCContext";
 import { useCommandHandler } from "@/lib/hooks/useCommandHandler";
 import TerminalInput from "./TerminalInput";
@@ -9,8 +9,24 @@ import { Message } from "@/lib/types";
 
 const ChannelTerminal = () => {
   const { currentChannel, messages, user } = useIRC();
-  const { handleCommand } = useCommandHandler();
+  const { handleCommand, handleRegularMessage } = useCommandHandler();
   const outputRef = useRef<HTMLDivElement>(null);
+
+  // Handler for channel input - distinguishes between commands and messages
+  const handleChannelInput = useCallback((input: string) => {
+    // If input starts with a command prefix, treat it as a command
+    // Commands can start with: join, leave, help, man, clear, nick, etc.
+    const commandPrefixes = ['join', 'leave', 'help', 'man', 'clear', 'nick', 'whoami', 'list', 'whois', 'exit', 'quit', 'disconnect', 'connect', 'balance', 'fund'];
+    const firstWord = input.trim().split(' ')[0].toLowerCase();
+    
+    if (commandPrefixes.includes(firstWord)) {
+      // Process as command
+      handleCommand(input);
+    } else {
+      // Send as message to channel
+      handleRegularMessage(input);
+    }
+  }, [handleCommand, handleRegularMessage]);
 
   /**
    * Filter and display messages with visibility rules:
@@ -133,7 +149,11 @@ const ChannelTerminal = () => {
 
       {/* Input - always visible at bottom */}
       <div className="flex-shrink-0">
-        <TerminalInput onSubmit={handleCommand} prompt={`${currentChannel.name} >`} />
+        <TerminalInput 
+          onSubmit={handleChannelInput} 
+          prompt={`${currentChannel.name} >`}
+          placeholder="Type your message..."
+        />
       </div>
     </div>
   );

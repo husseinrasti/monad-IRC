@@ -349,6 +349,7 @@ export const useSmartAccount = () => {
         return;
       }
 
+      addTerminalLine(`Creating or restoring smart account...`, "system");
       // Create or restore user
       const newUser = await restoreOrCreateUser(
         eoaAddress,
