@@ -19,6 +19,36 @@ export const truncateAddress = (address: string): string => {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 };
 
+/**
+ * Shorten a wallet address for display
+ * @param address - Full wallet address (e.g., "0x1234567890abcdef")
+ * @returns Shortened address (e.g., "0x1234...89fA")
+ */
+export const shortenAddress = (address: string): string => {
+  return truncateAddress(address);
+};
+
+/**
+ * Check if a string is a valid Ethereum address
+ * @param value - String to check
+ * @returns True if the string is a valid address format
+ */
+export const isAddress = (value: string): boolean => {
+  if (!value) return false;
+  // Check if it starts with 0x and has 42 characters (0x + 40 hex chars)
+  return /^0x[a-fA-F0-9]{40}$/.test(value);
+};
+
+/**
+ * Display name helper: shortens if address, otherwise shows as-is
+ * @param username - Username or wallet address
+ * @returns Shortened address if it's an address, otherwise the username
+ */
+export const displayName = (username: string): string => {
+  if (!username) return "Unknown";
+  return isAddress(username) ? shortenAddress(username) : username;
+};
+
 export const sleep = (ms: number): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve, ms));
 };

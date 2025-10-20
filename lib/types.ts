@@ -12,6 +12,7 @@ export interface Message {
   status: MessageStatus;
   txHash?: string;
   msgHash?: string;
+  senderWallet?: string; // Smart Account address of sender
 }
 
 export interface Channel {

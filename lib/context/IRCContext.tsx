@@ -8,6 +8,7 @@ interface IRCContextType extends IRCState {
   setCurrentChannel: (channel: Channel | null) => void;
   addChannel: (channel: Channel) => void;
   addMessage: (message: Message) => void;
+  addMessages: (messages: Message[]) => void;
   updateMessage: (id: string, updates: Partial<Message>) => void;
   setConnected: (connected: boolean) => void;
   setWalletMonitoring: (monitoring: boolean) => void;
@@ -151,7 +152,28 @@ export const IRCProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const addMessage = useCallback((message: Message) => {
-    setMessages((prev) => [...prev, message]);
+    setMessages((prev) => {
+      // Check if message already exists by id
+      const exists = prev.find((m) => m.id === message.id);
+      if (exists) {
+        // Update existing message instead of adding duplicate
+        return prev.map((m) => m.id === message.id ? message : m);
+      }
+      return [...prev, message];
+    });
+  }, []);
+
+  const addMessages = useCallback((newMessages: Message[]) => {
+    setMessages((prev) => {
+      const messageMap = new Map(prev.map((m) => [m.id, m]));
+      
+      // Add or update messages
+      newMessages.forEach((msg) => {
+        messageMap.set(msg.id, msg);
+      });
+      
+      return Array.from(messageMap.values());
+    });
   }, []);
 
   const updateMessage = useCallback((id: string, updates: Partial<Message>) => {
@@ -185,6 +207,7 @@ export const IRCProvider = ({ children }: { children: ReactNode }) => {
     setCurrentChannel,
     addChannel,
     addMessage,
+    addMessages,
     updateMessage,
     setConnected,
     setWalletMonitoring,

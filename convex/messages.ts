@@ -30,10 +30,10 @@ export const sendMessage = mutation({
       throw new Error("Channel not found");
     }
 
-    // Verify sender exists
+    // Verify sender exists (senderWallet is the Smart Account address)
     const sender = await ctx.db
       .query("users")
-      .withIndex("by_wallet", (q) => q.eq("walletAddress", args.senderWallet))
+      .withIndex("by_smart_account", (q) => q.eq("smartAccountAddress", args.senderWallet))
       .first();
 
     if (!sender) {
@@ -82,13 +82,15 @@ export const getChannelMessages = query({
   handler: async (ctx, args) => {
     const limit = args.limit || 100;
 
+    // Get messages in descending order (newest first)
     const messages = await ctx.db
       .query("messages")
       .withIndex("by_channel", (q) => q.eq("channelId", args.channelId))
       .order("desc")
       .take(limit);
 
-    return messages;
+    // Reverse to show oldest first (chat convention)
+    return messages.reverse();
   },
 });
 
@@ -126,19 +128,19 @@ export const getMessagesByChannelName = query({
       return [];
     }
 
-    // Get messages
+    // Get messages in descending order (newest first)
     const messages = await ctx.db
       .query("messages")
       .withIndex("by_channel", (q) => q.eq("channelId", channel._id))
       .order("desc")
       .take(limit);
 
-    // Enrich with username
+    // Enrich with username (senderWallet is the Smart Account address)
     const enrichedMessages = await Promise.all(
       messages.map(async (message) => {
         const user = await ctx.db
           .query("users")
-          .withIndex("by_wallet", (q) => q.eq("walletAddress", message.senderWallet))
+          .withIndex("by_smart_account", (q) => q.eq("smartAccountAddress", message.senderWallet))
           .first();
 
         return {
@@ -148,7 +150,8 @@ export const getMessagesByChannelName = query({
       })
     );
 
-    return enrichedMessages;
+    // Reverse to show oldest first (chat convention)
+    return enrichedMessages.reverse();
   },
 });
 
@@ -205,11 +208,6 @@ export const updateMessageStatusFromHyperIndex = mutation({
 
     if (!message) {
       console.error(`[Convex] Message not found for msgHash: ${args.msgHash}`);
-      // Log all messages to help debug
-      const allMessages = await ctx.db.query("messages").take(10);
-      console.log(`[Convex] Recent messages in database:`, 
-        allMessages.map(m => ({ id: m._id, msgHash: m.msgHash, status: m.status }))
-      );
       return null;
     }
 

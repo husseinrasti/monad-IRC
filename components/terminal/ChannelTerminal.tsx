@@ -1,56 +1,48 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import { useIRC } from "@/lib/context/IRCContext";
+import { useCommandHandler } from "@/lib/hooks/useCommandHandler";
 import TerminalInput from "./TerminalInput";
-import { formatTimestamp } from "@/lib/utils";
+import { formatTimestamp, displayName } from "@/lib/utils";
 import { Message } from "@/lib/types";
 
 const ChannelTerminal = () => {
-  const { currentChannel, messages, user, addMessage, addTerminalLine } = useIRC();
-  const [channelMessages, setChannelMessages] = useState<Message[]>([]);
+  const { currentChannel, messages, user } = useIRC();
+  const { handleCommand } = useCommandHandler();
   const outputRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (currentChannel) {
-      const filtered = messages.filter((msg) => msg.channelId === currentChannel.id);
-      setChannelMessages(filtered);
-    }
-  }, [messages, currentChannel]);
+  /**
+   * Filter and display messages with visibility rules:
+   * - Pending messages: only visible to the sender
+   * - Confirmed messages: visible to all
+   * - Failed messages: visible to the sender
+   */
+  const visibleMessages = useMemo(() => {
+    if (!currentChannel) return [];
 
+    const channelMessages = messages.filter((msg) => msg.channelId === currentChannel.id);
+
+    // Apply visibility rules
+    return channelMessages.filter((msg) => {
+      // Confirmed messages are visible to all
+      if (msg.status === "confirmed") return true;
+
+      // Pending/Failed messages are only visible to the sender
+      if (msg.status === "pending" || msg.status === "failed") {
+        return msg.senderWallet === user?.smartAccountAddress;
+      }
+
+      return false;
+    });
+  }, [messages, currentChannel, user?.smartAccountAddress]);
+
+  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
-  }, [channelMessages]);
-
-  const handleSendMessage = async (content: string) => {
-    if (!content.trim() || !currentChannel || !user) return;
-
-    const newMessage: Message = {
-      id: `msg-${Date.now()}`,
-      channelId: currentChannel.id,
-      userId: user.id,
-      username: user.username,
-      content,
-      timestamp: new Date(),
-      status: "pending",
-    };
-
-    addMessage(newMessage);
-    addTerminalLine(`Message sent to ${currentChannel.name}`, "info");
-
-    // TODO: Implement actual on-chain message sending
-    // For now, simulate confirmation
-    setTimeout(() => {
-      const confirmedMessage: Message = {
-        ...newMessage,
-        status: "confirmed",
-        txHash: `0x${Math.random().toString(16).slice(2)}`,
-      };
-      addMessage(confirmedMessage);
-    }, 2000);
-  };
+  }, [visibleMessages]);
 
   if (!currentChannel) {
     return null;
@@ -65,6 +57,9 @@ const ChannelTerminal = () => {
         <h2 className="text-terminal-text terminal-glow font-bold">
           {currentChannel.name.toUpperCase()}
         </h2>
+        <div className="text-terminal-muted text-xs mt-1">
+          {visibleMessages.length} {visibleMessages.length === 1 ? "message" : "messages"}
+        </div>
       </div>
 
       {/* Messages - scrollable area */}
@@ -72,31 +67,73 @@ const ChannelTerminal = () => {
         ref={outputRef}
         className="flex-1 overflow-y-auto px-4 py-2 scrollbar-hide min-h-0"
       >
-        {channelMessages.length === 0 ? (
+        {visibleMessages.length === 0 ? (
           <div className="text-terminal-muted font-mono">
             No messages yet. Start the conversation!
           </div>
         ) : (
-          channelMessages.map((msg) => (
-            <div key={msg.id} className="font-mono mb-1">
-              <span className="text-terminal-muted">{formatTimestamp(msg.timestamp)}</span>
-              {" "}
-              <span className={msg.status === "pending" ? "text-terminal-warning" : "text-terminal-info"}>
-                {msg.username}
-              </span>
-              {": "}
-              <span className="text-terminal-text">{msg.content}</span>
-              {msg.status === "pending" && (
-                <span className="text-terminal-warning ml-2">[Pending]</span>
-              )}
-            </div>
-          ))
+          visibleMessages.map((msg) => {
+            const isPending = msg.status === "pending";
+            const isFailed = msg.status === "failed";
+            const isOwnMessage = msg.senderWallet === user?.smartAccountAddress;
+
+            return (
+              <div 
+                key={msg.id} 
+                className={`font-mono mb-1 ${isPending ? "opacity-60" : ""} ${isFailed ? "opacity-40" : ""}`}
+              >
+                {/* Timestamp */}
+                <span className="text-terminal-muted text-xs">
+                  {formatTimestamp(msg.timestamp)}
+                </span>
+                {" "}
+                
+                {/* Username/Address */}
+                <span 
+                  className={`font-bold ${
+                    isFailed 
+                      ? "text-red-500" 
+                      : isPending 
+                      ? "text-terminal-warning" 
+                      : isOwnMessage 
+                      ? "text-terminal-info" 
+                      : "text-green-400"
+                  }`}
+                >
+                  {displayName(msg.username)}
+                </span>
+                {": "}
+                
+                {/* Message content */}
+                <span className="text-terminal-text">{msg.content}</span>
+                
+                {/* Status indicators */}
+                {isPending && (
+                  <span className="text-terminal-warning ml-2 text-xs">
+                    [⏳ Pending]
+                  </span>
+                )}
+                {isFailed && (
+                  <span className="text-red-500 ml-2 text-xs">
+                    [❌ Failed]
+                  </span>
+                )}
+                
+                {/* Transaction hash for confirmed messages */}
+                {msg.txHash && msg.status === "confirmed" && (
+                  <span className="text-terminal-muted ml-2 text-xs">
+                    [Tx: {msg.txHash.slice(0, 10)}...]
+                  </span>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
 
       {/* Input - always visible at bottom */}
       <div className="flex-shrink-0">
-        <TerminalInput onSubmit={handleSendMessage} prompt=":" />
+        <TerminalInput onSubmit={handleCommand} prompt={`${currentChannel.name} >`} />
       </div>
     </div>
   );

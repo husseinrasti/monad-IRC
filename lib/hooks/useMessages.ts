@@ -1,76 +1,103 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useIRC } from "@/lib/context/IRCContext";
 import { api, convexReact } from "@/lib/api/client";
 import { api as convexApi } from "../../convex/_generated/api";
 import { Message } from "@/lib/types";
+import { shortenAddress } from "@/lib/utils";
 
 export const useMessages = () => {
-  const { currentChannel, messages, addMessage, updateMessage, addTerminalLine, user } = useIRC();
-  const [subscribedChannelId, setSubscribedChannelId] = useState<string | null>(null);
+  const { currentChannel, messages, addMessage, addMessages, updateMessage, addTerminalLine, user } = useIRC();
+  const subscribedChannelIdRef = useRef<string | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const addMessagesRef = useRef(addMessages);
+  
+  // Keep ref updated
+  useEffect(() => {
+    addMessagesRef.current = addMessages;
+  }, [addMessages]);
 
   // Subscribe to messages in real-time for current channel
   useEffect(() => {
-    if (!currentChannel || subscribedChannelId === currentChannel.id) return;
+    // If no channel or already subscribed to this channel, do nothing
+    if (!currentChannel || subscribedChannelIdRef.current === currentChannel.id) return;
 
+    // Cleanup previous subscription if exists
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+      unsubscribeRef.current = null;
+    }
+
+    const channelId = currentChannel.id;
+    subscribedChannelIdRef.current = channelId;
+    
     const unsubscribe = convexReact
       .watchQuery(convexApi.messages.getChannelMessages, { 
-        channelId: currentChannel.id as any,
+        channelId: channelId as any,
         limit: 100 
       })
-      .onUpdate(() => {
-        api
-          .getChannelMessages(currentChannel.id as any, 100)
-          .then((fetchedMessages) => {
-            fetchedMessages.forEach((msg) => {
-              // Get username from user or fallback to wallet address
-              api.getUserByWallet(msg.senderWallet).then((msgUser) => {
-                const messageObj: Message = {
-                  id: msg._id,
-                  channelId: msg.channelId,
-                  userId: msgUser?._id || "unknown",
-                  username: msgUser?.username || msg.senderWallet.slice(0, 8),
-                  content: msg.content,
-                  timestamp: new Date(msg._creationTime),
-                  status: msg.status,
-                  txHash: msg.txHash,
-                  msgHash: msg.msgHash,
-                };
-                addMessage(messageObj);
-              }).catch(console.error);
-            });
-          })
-          .catch((error) => {
-            console.error("Failed to fetch messages:", error);
+      .onUpdate(async () => {
+        try {
+          const fetchedMessages = await api.getChannelMessages(channelId as any, 100);
+          
+          // Process all messages in parallel
+          const messagePromises = fetchedMessages.map(async (msg) => {
+            const msgUser = await api.getUserBySmartAccount(msg.senderWallet).catch(() => null);
+            
+            return {
+              id: msg._id,
+              channelId: msg.channelId,
+              userId: msgUser?._id || "unknown",
+              username: msgUser?.username || shortenAddress(msg.senderWallet),
+              content: msg.content,
+              timestamp: new Date(msg._creationTime),
+              status: msg.status,
+              txHash: msg.txHash,
+              msgHash: msg.msgHash,
+              senderWallet: msg.senderWallet,
+            } as Message;
           });
+          
+          const processedMessages = await Promise.all(messagePromises);
+          
+          // Add all messages in a single batch update using ref
+          addMessagesRef.current(processedMessages);
+        } catch (error) {
+          console.error("Failed to fetch messages:", error);
+        }
       });
 
-    setSubscribedChannelId(currentChannel.id);
+    unsubscribeRef.current = unsubscribe;
 
     return () => {
-      unsubscribe();
-      setSubscribedChannelId(null);
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+      subscribedChannelIdRef.current = null;
     };
-  }, [currentChannel, subscribedChannelId, addMessage]);
+  }, [currentChannel]);
 
   const fetchMessages = useCallback(async (channelId: string) => {
     try {
       const fetchedMessages = await api.getChannelMessages(channelId as any, 100);
       
       for (const msg of fetchedMessages) {
-        const msgUser = await api.getUserByWallet(msg.senderWallet);
+        // Get user by Smart Account address
+        const msgUser = await api.getUserBySmartAccount(msg.senderWallet);
         
         const messageObj: Message = {
           id: msg._id,
           channelId: msg.channelId,
           userId: msgUser?._id || "unknown",
-          username: msgUser?.username || msg.senderWallet.slice(0, 8),
+          username: msgUser?.username || shortenAddress(msg.senderWallet),
           content: msg.content,
           timestamp: new Date(msg._creationTime),
           status: msg.status,
           txHash: msg.txHash,
           msgHash: msg.msgHash,
+          senderWallet: msg.senderWallet,
         };
         addMessage(messageObj);
       }

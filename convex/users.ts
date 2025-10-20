@@ -96,6 +96,35 @@ export const getUserByWallet = query({
 });
 
 /**
+ * Get user by Smart Account address
+ */
+export const getUserBySmartAccount = query({
+  args: {
+    smartAccountAddress: v.string(),
+  },
+  returns: v.union(
+    v.object({
+      _id: v.id("users"),
+      _creationTime: v.number(),
+      walletAddress: v.string(),
+      username: v.string(),
+      smartAccountAddress: v.optional(v.string()),
+      verificationSignature: v.optional(v.string()),
+      lastConnected: v.optional(v.number()),
+    }),
+    v.null()
+  ),
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_smart_account", (q) => q.eq("smartAccountAddress", args.smartAccountAddress))
+      .first();
+
+    return user || null;
+  },
+});
+
+/**
  * Get user by username
  */
 export const getUserByUsername = query({

@@ -145,10 +145,10 @@ export const createChannelInternal = internalMutation({
     }
 
     // Ensure creator user exists (create if not)
-    let creatorUser = await ctx.db
-      .query("users")
-      .withIndex("by_smart_account", (q) => q.eq("smartAccountAddress", args.creator))
-      .first();
+    // let creatorUser = await ctx.db
+    //   .query("users")
+    //   .withIndex("by_smart_account", (q) => q.eq("smartAccountAddress", args.creator))
+    //   .first();
 
     // if (!creatorUser) {
     //   console.log(`[Convex] Creator user not found, creating user for: ${args.creator}`);

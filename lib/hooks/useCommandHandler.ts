@@ -5,9 +5,11 @@ import { useIRC } from "@/lib/context/IRCContext";
 import { useSmartAccount } from "./useSmartAccount";
 import { useUsername } from "./useUsername";
 import { useContract } from "./useContract";
+import { useMessages } from "./useMessages";
 import { parseCommand, formatHelpText, getAllCommandsHelp } from "@/lib/commands/commands";
 import { Channel, Message } from "@/lib/types";
 import { api } from "@/lib/api/client";
+import { displayName, shortenAddress } from "@/lib/utils";
 
 /**
  * Hook for handling user commands in the IRC terminal
@@ -35,6 +37,7 @@ export const useCommandHandler = () => {
     checkSmartAccountBalance,
     fundSmartAccount,
   } = useContract();
+  const { fetchMessages } = useMessages();
 
   // Handle regular messages (non-commands)
   const handleRegularMessage = useCallback(
@@ -44,15 +47,17 @@ export const useCommandHandler = () => {
         return;
       }
 
-      if (!user) {
-        addTerminalLine("User not found. Please reconnect your Smart Account.", "error");
+      if (!user || !user.smartAccountAddress) {
+        addTerminalLine("User or Smart Account not found. Please reconnect your Smart Account.", "error");
         return;
       }
 
-
       try {
-        // Create message hash
-        const msgHash = `0x${Buffer.from(message).toString("hex")}`;
+        // Create message hash using keccak256 (matches contract)
+        const { keccak256, toHex } = await import("viem");
+        const msgHash = keccak256(toHex(message));
+
+        addTerminalLine("Saving message to database...", "info");
 
         // Create message in Convex with pending status
         const newMessage = await api.sendMessage(
@@ -62,7 +67,7 @@ export const useCommandHandler = () => {
           message
         );
 
-        // Add to local state
+        // Add to local state (visible only to sender while pending)
         const messageObj: Message = {
           id: newMessage._id,
           channelId: newMessage.channelId,
@@ -73,20 +78,23 @@ export const useCommandHandler = () => {
           status: "pending",
           msgHash: newMessage.msgHash,
           txHash: newMessage.txHash,
+          senderWallet: user.smartAccountAddress,
         };
 
         addMessage(messageObj);
-        addTerminalLine(`[${user.username}] ${message}`, "output");
+        addTerminalLine(`[${displayName(user.username)}] ${message}`, "output");
 
-        // Send to blockchain using delegated transaction
+        // Send to blockchain using Smart Account + Bundler + Paymaster
+        addTerminalLine("Sending message on-chain...", "info");
         const txHash = await sendMessageOnChain(message, currentChannel.name);
 
         if (txHash) {
-          addTerminalLine("Message confirmed on-chain!", "system");
-          addTerminalLine("Status will update via HyperIndex...", "info");
+          addTerminalLine("Message sent on-chain!", "system");
+          addTerminalLine(`   Tx: ${txHash}`, "info");
+          addTerminalLine("Waiting for HyperIndex confirmation...", "info");
           
-          // Note: Message status will be updated to "confirmed" by HyperIndex webhook
-          // when it detects the MessageSent event
+          // Note: Message status will be updated to "confirmed" by HyperIndex
+          // when it detects the MessageSent event and calls updateMessageStatusFromHyperIndex
         } else {
           // If transaction failed, update status immediately
           await api.updateMessageStatus(
@@ -97,11 +105,12 @@ export const useCommandHandler = () => {
           updateMessage(messageObj.id, {
             status: "failed",
           });
-          addTerminalLine("Message failed to confirm on-chain", "error");
+          addTerminalLine("Message failed to send on-chain", "error");
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Unknown error";
         addTerminalLine(`Failed to send message: ${errorMessage}`, "error");
+        console.error("Message send error:", error);
       }
     },
     [currentChannel, user, addMessage, updateMessage, sendMessageOnChain, addTerminalLine]
@@ -250,7 +259,12 @@ export const useCommandHandler = () => {
 
             setCurrentChannel(channelToJoin);
             addTerminalLine(`Joined channel ${joinChannelName}`, "system");
-            addTerminalLine(`Creator: ${channelToJoin.creator}`, "info");
+            addTerminalLine(`Creator: ${shortenAddress(channelToJoin.creator)}`, "info");
+            
+            // Fetch and display historical messages
+            addTerminalLine("Loading messages...", "info");
+            await fetchMessages(channelToJoin.id);
+            addTerminalLine("Messages loaded. Type your message to chat!", "system");
           } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "Unknown error";
             addTerminalLine(`Failed to join channel: ${errorMessage}`, "error");
@@ -421,6 +435,7 @@ export const useCommandHandler = () => {
       updateMessage,
       fundSmartAccount,
       checkSmartAccountBalance,
+      fetchMessages,
     ]
   );
 

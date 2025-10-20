@@ -33,6 +33,12 @@ export const monadIrcApi = {
     });
   },
 
+  async getUserBySmartAccount(smartAccountAddress: string) {
+    return await convex.query(convexApi.users.getUserBySmartAccount, {
+      smartAccountAddress,
+    });
+  },
+
   async getUserByUsername(username: string) {
     return await convex.query(convexApi.users.getUserByUsername, {
       username,
