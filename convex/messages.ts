@@ -181,6 +181,62 @@ export const updateMessageStatus = mutation({
 });
 
 /**
+ * Update message status by msgHash (public - called by HyperIndex)
+ */
+export const updateMessageStatusFromHyperIndex = mutation({
+  args: {
+    msgHash: v.string(),
+    status: v.union(v.literal("pending"), v.literal("confirmed"), v.literal("failed")),
+    txHash: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    console.log("[Convex] updateMessageStatusFromHyperIndex called:", {
+      msgHash: args.msgHash,
+      status: args.status,
+      txHash: args.txHash,
+    });
+
+    // Find message by msgHash
+    const message = await ctx.db
+      .query("messages")
+      .withIndex("by_msg_hash", (q) => q.eq("msgHash", args.msgHash))
+      .first();
+
+    if (!message) {
+      console.error(`[Convex] Message not found for msgHash: ${args.msgHash}`);
+      // Log all messages to help debug
+      const allMessages = await ctx.db.query("messages").take(10);
+      console.log(`[Convex] Recent messages in database:`, 
+        allMessages.map(m => ({ id: m._id, msgHash: m.msgHash, status: m.status }))
+      );
+      return null;
+    }
+
+    console.log(`[Convex] Found message:`, {
+      id: message._id,
+      currentStatus: message.status,
+      newStatus: args.status,
+    });
+
+    // Update status
+    await ctx.db.patch(message._id, {
+      status: args.status,
+      txHash: args.txHash || message.txHash,
+    });
+
+    console.log(`[Convex] Message status updated successfully:`, {
+      id: message._id,
+      msgHash: args.msgHash,
+      status: args.status,
+      txHash: args.txHash || message.txHash,
+    });
+
+    return null;
+  },
+});
+
+/**
  * Update message status by msgHash (internal - called by webhooks)
  */
 export const updateMessageStatusByHash = internalMutation({

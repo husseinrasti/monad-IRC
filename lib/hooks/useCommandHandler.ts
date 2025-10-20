@@ -226,16 +226,36 @@ export const useCommandHandler = () => {
           }
           
           const joinChannelName = args[0].startsWith("#") ? args[0] : `#${args[0]}`;
-          const channelToJoin = channels.find((c) => c.name === joinChannelName);
           
-          if (!channelToJoin) {
-            addTerminalLine(`Channel ${joinChannelName} not found.`, "error");
-            addTerminalLine("Use 'list channels' to see available channels.", "info");
-            break;
-          }
+          try {
+            addTerminalLine(`Looking for channel ${joinChannelName}...`, "info");
+            
+            // Fetch channel directly from database
+            const channelData = await api.getChannelByName(joinChannelName);
+            
+            if (!channelData) {
+              addTerminalLine(`Channel ${joinChannelName} not found.`, "error");
+              addTerminalLine("Use 'list channels' to see available channels.", "info");
+              break;
+            }
 
-          setCurrentChannel(channelToJoin);
-          addTerminalLine(`Joined channel ${joinChannelName}`, "system");
+            // Transform to Channel type
+            const channelToJoin: Channel = {
+              id: channelData._id,
+              name: channelData.name,
+              creator: channelData.creator,
+              createdAt: new Date(channelData._creationTime),
+              txHash: channelData.txHash,
+            };
+
+            setCurrentChannel(channelToJoin);
+            addTerminalLine(`Joined channel ${joinChannelName}`, "system");
+            addTerminalLine(`Creator: ${channelToJoin.creator}`, "info");
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+            addTerminalLine(`Failed to join channel: ${errorMessage}`, "error");
+            console.error("Join channel error:", error);
+          }
           break;
 
         case "leave":
@@ -257,7 +277,7 @@ export const useCommandHandler = () => {
           addTerminalLine("Fetching channels from database...", "info");
           
           try {
-            // Fetch fresh list from Convex
+            // Fetch fresh list from Convex database
             const fetchedChannels = await api.getAllChannels();
             
             if (fetchedChannels.length === 0) {
@@ -271,23 +291,14 @@ export const useCommandHandler = () => {
               addTerminalLine("", "output");
               
               fetchedChannels.forEach((channel, index) => {
-                const createdAt = new Date(channel._creationTime);
-                const formattedDate = createdAt.toLocaleString();
                 const creatorShort = channel.creator.slice(0, 6) + "..." + channel.creator.slice(-4);
                 
                 addTerminalLine(`  ${index + 1}. ${channel.name}`, "info");
                 addTerminalLine(`     Creator: ${creatorShort}`, "output");
-                addTerminalLine(`     Created: ${formattedDate}`, "output");
-                if (channel.txHash) {
-                  const txShort = channel.txHash.slice(0, 10) + "..." + channel.txHash.slice(-8);
-                  addTerminalLine(`     Tx: ${txShort}`, "output");
-                }
+              
                 addTerminalLine("", "output");
               });
-              
-              addTerminalLine("═══════════════════════════════════════════════════════", "system");
-              addTerminalLine(`  Total: ${fetchedChannels.length} channel${fetchedChannels.length === 1 ? '' : 's'}`, "info");
-              addTerminalLine("═══════════════════════════════════════════════════════", "system");
+            
               addTerminalLine("", "output");
               addTerminalLine("Use 'join #channelName' to enter a channel", "info");
             }
