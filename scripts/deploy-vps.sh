@@ -128,7 +128,7 @@ module.exports = {
     {
       name: 'monad-convex',
       script: 'pnpm',
-      args: 'convex:dev',
+      args: 'convex:deploy',
       env: {
         NODE_ENV: 'development'
       },
