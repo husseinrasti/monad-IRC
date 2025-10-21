@@ -112,11 +112,13 @@ module.exports = {
     {
       name: 'monad-frontend',
       script: 'pnpm',
-      args: 'dev',
+      args: 'start -- -p 4000',
       env: {
         NODE_ENV: 'development',
-        PORT: 4000
+        PORT: 4000,
+        HOST: '0.0.0.0',
       },
+      cwd: './',
       watch: false,
       instances: 1,
       autorestart: true,
