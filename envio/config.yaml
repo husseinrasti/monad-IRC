@@ -6,7 +6,7 @@ networks:
   - id: 10143
     rpc_config:
       url: https://testnet-rpc.monad.xyz
-    start_block: 44512794
+    start_block: 44513115 
     contracts:
       - name: MonadIRC
         address:
