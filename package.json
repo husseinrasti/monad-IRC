@@ -3,14 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 4000",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy",
     "envio:dev": "cd envio && pnpm dev",
-    "dev:all": "concurrently \"npm run dev\" \"npm run convex:dev\" \"npm run envio:dev\"",
+    "dev:all": "concurrently \"pnpm dev\" \"pnpm convex:dev\" \"pnpm envio:dev\"",
     "validate:banner": "node tests/validate-banner.js"
   },
   "dependencies": {

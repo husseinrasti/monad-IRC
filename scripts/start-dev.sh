@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Development startup script
-# Runs frontend and Convex backend concurrently
+# Runs frontend, Convex backend, and Envio indexer concurrently
 
 echo "🚀 Starting Monad IRC Development Environment"
 echo "=============================================="
@@ -14,11 +14,33 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Check if npm is available
-if ! command -v npm &> /dev/null; then
-    echo -e "${RED}❌ npm not found. Please install Node.js${NC}"
+# Check for Node.js v20
+echo "Checking prerequisites..."
+if ! command -v node &> /dev/null; then
+    echo -e "${RED}❌ Node.js is not installed. Please install Node.js v20 first.${NC}"
     exit 1
 fi
+
+echo -e "${GREEN}✓ Node.js $(node -v) detected${NC}"
+
+# Check if pnpm is available
+if ! command -v pnpm &> /dev/null; then
+    echo -e "${RED}❌ pnpm not found. Installing pnpm...${NC}"
+    npm install -g pnpm@10.18.3
+    echo -e "${GREEN}✓ pnpm installed${NC}"
+fi
+
+echo -e "${GREEN}✓ pnpm detected${NC}"
+
+# Check for Docker
+if ! command -v docker &> /dev/null; then
+    echo -e "${RED}❌ Docker is not installed. Please install Docker first.${NC}"
+    echo -e "${YELLOW}Visit: https://docs.docker.com/get-docker/${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Docker detected${NC}"
+echo ""
 
 # Check if Convex is initialized
 if [ ! -d "convex/_generated" ]; then
@@ -29,14 +51,14 @@ if [ ! -d "convex/_generated" ]; then
     
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         echo -e "${BLUE}Initializing Convex...${NC}"
-        npx convex dev --once
+        pnpm convex:dev
         echo ""
         echo -e "${GREEN}✓ Convex initialized${NC}"
         echo -e "${YELLOW}📝 Remember to update NEXT_PUBLIC_CONVEX_URL in .env.local${NC}"
         echo ""
     else
         echo -e "${RED}❌ Convex must be initialized before starting dev environment${NC}"
-        echo "Run: ${YELLOW}npx convex dev${NC}"
+        echo "Run: ${YELLOW}pnpm convex:dev${NC}"
         exit 1
     fi
 fi
@@ -57,9 +79,9 @@ if [ ! -f ".env.local" ]; then
 fi
 
 # Check if concurrently is installed locally
-if ! npm list concurrently &> /dev/null; then
+if ! pnpm list concurrently &> /dev/null; then
     echo -e "${YELLOW}📦 Installing concurrently...${NC}"
-    npm install --save-dev concurrently
+    pnpm install --save-dev concurrently
     echo -e "${GREEN}✓ concurrently installed${NC}"
     echo ""
 fi
@@ -80,7 +102,7 @@ fi
 
 # Start services
 echo -e "${GREEN}Starting all services...${NC}"
-echo "- Frontend: ${BLUE}http://localhost:3000${NC}"
+echo "- Frontend: ${BLUE}http://localhost:4000${NC}"
 echo "- HyperIndex GraphQL: ${BLUE}http://localhost:8080/graphql${NC}"
 echo "- HyperIndex UI: ${BLUE}http://localhost:8080${NC}"
 echo "- Convex Dashboard: ${BLUE}https://dashboard.convex.dev${NC}"
@@ -88,5 +110,5 @@ echo ""
 echo -e "${YELLOW}Press Ctrl+C to stop all services${NC}"
 echo ""
 
-# Use npm run dev:all which uses concurrently to run all 3 services
-npm run dev:all
+# Use pnpm dev:all which uses concurrently to run all 3 services
+pnpm dev:all

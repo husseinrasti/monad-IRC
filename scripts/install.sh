@@ -19,38 +19,75 @@ NC='\033[0m' # No Color
 # Check for Node.js
 echo "Checking prerequisites..."
 if ! command -v node &> /dev/null; then
-    echo -e "${RED}❌ Node.js is not installed. Please install Node.js 18+ first.${NC}"
+    echo -e "${RED}❌ Node.js is not installed. Please install Node.js v20 first.${NC}"
     exit 1
 fi
 
 NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-if [ "$NODE_VERSION" -lt 18 ]; then
-    echo -e "${RED}❌ Node.js version must be 18 or higher. Current: $(node -v)${NC}"
+if [ "$NODE_VERSION" -ne 20 ]; then
+    echo -e "${RED}❌ Node.js version must be exactly v20. Current: $(node -v)${NC}"
+    echo -e "${YELLOW}Install Node.js v20: https://nodejs.org${NC}"
     exit 1
 fi
 
 echo -e "${GREEN}✓ Node.js $(node -v) detected${NC}"
+
+# Check for pnpm
+echo "Checking for pnpm..."
+if ! command -v pnpm &> /dev/null; then
+    echo -e "${YELLOW}Installing pnpm globally...${NC}"
+    npm install -g pnpm@10.6.5
+    echo -e "${GREEN}✓ pnpm installed${NC}"
+else
+    echo -e "${GREEN}✓ pnpm detected${NC}"
+fi
+
+# Check for Docker
+echo "Checking for Docker..."
+if ! command -v docker &> /dev/null; then
+    echo -e "${RED}❌ Docker is not installed. Please install Docker first.${NC}"
+    echo -e "${YELLOW}Visit: https://docs.docker.com/get-docker/${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Docker detected${NC}"
+
+# Check for Foundry
+echo "Checking for Foundry..."
+if ! command -v forge &> /dev/null; then
+    echo -e "${RED}❌ Foundry is not installed.${NC}"
+    echo -e "${YELLOW}Install Foundry: curl -L https://foundry.paradigm.xyz | bash && foundryup${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Foundry detected${NC}"
 echo ""
 
 # Install main dependencies
-echo "📦 Installing dependencies..."
-npm install
-echo -e "${GREEN}✓ Dependencies installed (includes Convex)${NC}"
+echo "📦 Installing main dependencies..."
+pnpm install
+echo -e "${GREEN}✓ Main dependencies installed (includes Convex)${NC}"
 echo ""
 
 # Install contract dependencies
 echo "📦 Installing contract dependencies..."
 cd contracts
-npm install
+make install || forge install
 cd ..
 echo -e "${GREEN}✓ Contract dependencies installed${NC}"
+echo ""
+
+# Install Envio dependencies
+echo "📦 Installing Envio indexer dependencies..."
+cd envio
+pnpm install
+cd ..
+echo -e "${GREEN}✓ Envio dependencies installed${NC}"
 echo ""
 
 # Check if Convex CLI is installed globally
 echo "🔍 Checking for Convex CLI..."
 if ! command -v convex &> /dev/null; then
     echo -e "${YELLOW}Installing Convex CLI globally...${NC}"
-    npm install -g convex
+    pnpm install -g convex
     echo -e "${GREEN}✓ Convex CLI installed${NC}"
 else
     echo -e "${GREEN}✓ Convex CLI already installed${NC}"
@@ -73,7 +110,7 @@ if [ ! -f ".env.local" ]; then
 # ======================
 # Convex Configuration
 # ======================
-# Run 'npx convex dev' to get your deployment URL
+# Run 'pnpm convex:dev' to get your deployment URL
 NEXT_PUBLIC_CONVEX_URL=
 
 # For HyperIndex webhook integration
@@ -144,9 +181,9 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     read -p "Press Enter to continue..." -r
     
     # Initialize Convex
-    npx convex dev --once || {
+    pnpm convex:dev || {
         echo -e "${RED}❌ Convex initialization failed${NC}"
-        echo -e "${YELLOW}You can run this manually later: npx convex dev${NC}"
+        echo -e "${YELLOW}You can run this manually later: pnpm convex:dev${NC}"
     }
     
     echo ""
@@ -154,7 +191,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo -e "${YELLOW}📝 Remember to add your NEXT_PUBLIC_CONVEX_URL to .env.local${NC}"
 else
     echo -e "${YELLOW}⚠️  Skipping Convex setup.${NC}"
-    echo -e "${YELLOW}   Run manually: npx convex dev${NC}"
+    echo -e "${YELLOW}   Run manually: pnpm convex:dev${NC}"
 fi
 
 echo ""
@@ -166,7 +203,7 @@ echo ""
 echo -e "${YELLOW}⚠️  IMPORTANT NEXT STEPS:${NC}"
 echo ""
 echo "1. ☁️  Initialize Convex (if you haven't already):"
-echo "   ${YELLOW}npx convex dev${NC}"
+echo "   ${YELLOW}pnpm convex:dev${NC}"
 echo "   Copy the deployment URL to .env.local:"
 echo "   ${YELLOW}NEXT_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud${NC}"
 echo "   ${YELLOW}CONVEX_WEBHOOK_URL=https://your-deployment.convex.cloud${NC}"
@@ -181,19 +218,23 @@ echo ""
 echo "4. 🚀 Deploy the smart contract:"
 echo "   ${YELLOW}cd contracts && make deploy${NC}"
 echo ""
-echo "5. 📋 Update contract address in .env.local:"
+echo "5. 📋 Update contract address in .env.local and envio/config.yaml:"
 echo "   ${YELLOW}NEXT_PUBLIC_CONTRACT_ADDRESS=0xYOUR_CONTRACT_ADDRESS${NC}"
 echo ""
-echo "6. ▶️  Start the application:"
-echo "   ${YELLOW}npm run dev:all${NC}"
+echo "6. 🔄 Generate Envio types after config changes:"
+echo "   ${YELLOW}cd envio && pnpm codegen${NC}"
+echo ""
+echo "7. ▶️  Start the application:"
+echo "   ${YELLOW}pnpm dev:all${NC}"
 echo "   Or separately:"
-echo "   Terminal 1: ${YELLOW}npm run convex:dev${NC}"
-echo "   Terminal 2: ${YELLOW}npm run dev${NC}"
+echo "   Terminal 1: ${YELLOW}pnpm convex:dev${NC}"
+echo "   Terminal 2: ${YELLOW}pnpm dev${NC}"
+echo "   Terminal 3: ${YELLOW}cd envio && pnpm dev${NC}"
 echo ""
 echo "📚 Documentation:"
 echo "   - Quick Start: ${YELLOW}QUICK_START.md${NC}"
-echo "   - Convex Setup: ${YELLOW}CONVEX_SETUP.md${NC}"
-echo "   - Migration Guide: ${YELLOW}CONVEX_MIGRATION.md${NC}"
+echo "   - Setup Guide: ${YELLOW}SETUP_GUIDE.md${NC}"
+echo "   - Contributing: ${YELLOW}CONTRIBUTING.md${NC}"
 echo ""
 echo -e "${BLUE}📖 New to Convex?${NC}"
 echo "   Convex is your serverless backend - no database setup needed!"
