@@ -10,6 +10,7 @@
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy",
     "envio:dev": "cd envio && pnpm dev",
+    "envio:deploy": "cd envio && pnpm envio codegen && pnpm envio start",
     "dev:all": "concurrently \"pnpm dev\" \"pnpm convex:dev\" \"pnpm envio:dev\"",
     "deploy:vps": "bash scripts/deploy-vps.sh",
     "validate:banner": "node tests/validate-banner.js"

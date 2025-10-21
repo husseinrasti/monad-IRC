@@ -114,7 +114,7 @@ module.exports = {
       script: 'pnpm',
       args: 'start',
       env: {
-        NODE_ENV: 'development',
+        NODE_ENV: 'production',
         PORT: 4000,
       },
       watch: false,
@@ -130,7 +130,7 @@ module.exports = {
       script: 'pnpm',
       args: 'convex:deploy',
       env: {
-        NODE_ENV: 'development'
+        NODE_ENV: 'production'
       },
       watch: false,
       instances: 1,
@@ -143,10 +143,10 @@ module.exports = {
     {
       name: 'monad-envio',
       script: 'pnpm',
-      args: 'dev',
+      args: 'envio:deploy',
       cwd: './envio',
       env: {
-        NODE_ENV: 'development',
+        NODE_ENV: 'production',
         TUI_OFF: 'true'
       },
       watch: false,
