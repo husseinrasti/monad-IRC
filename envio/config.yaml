@@ -6,11 +6,11 @@ networks:
   - id: 10143
     rpc_config:
       url: https://testnet-rpc.monad.xyz
-    start_block: 44513115 
+    start_block: 44531115 
     contracts:
       - name: MonadIRC
         address:
-          - "0x99ff09C8163822c34A4d91D842B03af42A610aAC"
+          - "0x1657bFE6c1576a00612160fD1021351FeBdF991d"
         abi_file_path: ./abis/MonadIRC.json
         handler: ./src/eventHandlers.ts
         events:

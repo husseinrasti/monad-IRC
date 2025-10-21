@@ -11,6 +11,7 @@
     "convex:deploy": "convex deploy",
     "envio:dev": "cd envio && pnpm dev",
     "dev:all": "concurrently \"pnpm dev\" \"pnpm convex:dev\" \"pnpm envio:dev\"",
+    "deploy:vps": "bash scripts/deploy-vps.sh",
     "validate:banner": "node tests/validate-banner.js"
   },
   "dependencies": {

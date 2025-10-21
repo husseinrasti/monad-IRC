@@ -249,6 +249,77 @@ All data is automatically synced in real-time with Convex's reactive queries.
 4. Bundler executes and returns transaction hash
 5. Receipt fetched via `eth_getUserOperationReceipt`
 
+## 🖥️ VPS Deployment
+
+### Quick Deployment
+
+Deploy to a VPS (Ubuntu/Debian) using the automated deployment script:
+
+```bash
+# On your VPS
+git clone <your-repo>
+cd monad-irc
+
+# Run deployment script
+pnpm deploy:vps
+```
+
+### Manual VPS Setup
+
+If you prefer manual setup or troubleshooting:
+
+```bash
+# 1. Install Docker (required for Envio)
+curl -fsSL https://get.docker.com | sudo sh
+sudo systemctl start docker
+
+# 2. Install PM2 (for process management)
+npm install -g pm2
+
+# 3. Install dependencies
+pnpm install
+cd envio && pnpm install && cd ..
+
+# 4. Start services with PM2
+pm2 start pnpm --name "monad-frontend" -- dev
+pm2 start pnpm --name "monad-convex" -- convex:dev
+cd envio && pm2 start pnpm --name "monad-envio" -- dev && cd ..
+
+# 5. Save PM2 config
+pm2 save
+
+# 6. Setup auto-restart on reboot
+pm2 startup
+```
+
+### Troubleshooting VPS Issues
+
+If you encounter errors on your VPS:
+
+```bash
+# Run the troubleshooting script
+./scripts/troubleshoot-vps.sh
+
+# Check logs
+pm2 logs
+
+# Restart services
+pm2 restart all
+```
+
+**Common Issues:**
+- **Port 4000 in use**: `lsof -ti:4000 | xargs kill -9`
+- **Envio database error**: Ensure Docker is running (`sudo systemctl start docker`)
+- **Process crashes**: Check logs with `pm2 logs monad-envio`
+
+### VPS Documentation
+
+For complete VPS deployment guides, see:
+- `VPS_DEPLOYMENT.md` - Full deployment guide
+- `VPS_QUICK_FIX.md` - Quick fixes for common issues
+- `scripts/deploy-vps.sh` - Automated deployment script
+- `scripts/troubleshoot-vps.sh` - Diagnostic tool
+
 ## Security Considerations
 
 - Smart Accounts controlled by EOA owner via MetaMask
